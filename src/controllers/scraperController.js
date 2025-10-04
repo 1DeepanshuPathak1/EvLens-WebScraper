@@ -59,10 +59,10 @@ const scraperController = {
 
   async scrapeEvent(req, res, next) {
     try {
-      const { eventName, platforms } = req.body;
+      const { eventName, eventDate, platforms, socialLinks, output } = req.body;
       logger.info(`Scraping event: ${eventName} from platforms: ${platforms.join(', ')}`);
       
-      const result = await scraperService.scrapeEvent(eventName, platforms);
+      const result = await scraperService.scrapeEvent(eventName, eventDate, platforms, socialLinks, output);
       
       res.json({
         success: true,

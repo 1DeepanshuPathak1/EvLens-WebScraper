@@ -1,4 +1,99 @@
+const { Parser } = require('json2csv');
+const fs = require('fs');
+const path = require('path');
+const logger = require('../utils/logger');
+
 const dataFormatter = {
+  async convertToExcel(data) {
+    try {
+      // Flatten the data structure for CSV
+      const flattenedData = this.flattenDataForExcel(data);
+      
+      // Define fields for CSV
+      const fields = [
+        'eventName',
+        'eventDate',
+        'platform',
+        'postType',
+        'content',
+        'url',
+        'author',
+        'likes',
+        'comments',
+        'shares',
+        'sentiment',
+        'postDate',
+        'engagement'
+      ];
+
+      const json2csvParser = new Parser({ fields });
+      const csv = json2csvParser.parse(flattenedData);
+
+      // Generate unique filename
+      const filename = `event_analysis_${data.eventName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.csv`;
+      const filepath = path.join(process.cwd(), 'exports', filename);
+
+      // Ensure exports directory exists
+      if (!fs.existsSync(path.join(process.cwd(), 'exports'))) {
+        fs.mkdirSync(path.join(process.cwd(), 'exports'));
+      }
+
+      // Write CSV file
+      fs.writeFileSync(filepath, csv);
+
+      return {
+        success: true,
+        message: 'Excel file generated successfully',
+        filename,
+        filepath,
+        summary: {
+          totalPosts: flattenedData.length,
+          platforms: data.platforms,
+          periodCovered: data.scrapingPeriod,
+          totalEngagement: data.totalEngagement
+        }
+      };
+    } catch (error) {
+      logger.error(`Error generating Excel file: ${error.message}`);
+      throw new Error(`Failed to generate Excel file: ${error.message}`);
+    }
+  },
+
+  flattenDataForExcel(data) {
+    const flattened = [];
+    
+    data.results.forEach(result => {
+      if (Array.isArray(result.posts)) {
+        result.posts.forEach(post => {
+          flattened.push({
+            eventName: data.eventName,
+            eventDate: data.eventDate,
+            platform: result.platform,
+            postType: post.type || 'post',
+            content: post.text || post.title || '',
+            url: post.url,
+            author: post.metadata?.author || 'Unknown',
+            likes: post.engagement?.likes || 0,
+            comments: post.engagement?.comments || 0,
+            shares: post.engagement?.shares || 0,
+            sentiment: post.sentiment || 'neutral',
+            postDate: post.created_at,
+            engagement: this.calculatePostEngagement(post)
+          });
+        });
+      }
+    });
+
+    return flattened;
+  },
+
+  calculatePostEngagement(post) {
+    const likes = post.engagement?.likes || 0;
+    const comments = post.engagement?.comments || 0;
+    const shares = post.engagement?.shares || 0;
+    return likes + (comments * 2) + (shares * 3);
+  },
+
   format(rawData, url, platform, eventName) {
     const baseFormat = {
       url,
