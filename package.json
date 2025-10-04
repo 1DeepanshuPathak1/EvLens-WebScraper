@@ -13,7 +13,11 @@
     "type": "git",
     "url": "git+https://github.com/1DeepanshuPathak1/EvLens-WebScraper.git"
   },
-  "keywords": ["scraping", "sentiment", "events"],
+  "keywords": [
+    "scraping",
+    "sentiment",
+    "events"
+  ],
   "author": "",
   "license": "ISC",
   "bugs": {
@@ -21,14 +25,14 @@
   },
   "homepage": "https://github.com/1DeepanshuPathak1/EvLens-WebScraper#readme",
   "dependencies": {
-    "express": "^4.18.2",
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
-    "puppeteer": "^21.5.2",
-    "dotenv": "^16.3.1",
     "cors": "^2.8.5",
-    "helmet": "^7.1.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "puppeteer": "^24.23.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {
