@@ -1,65 +1,87 @@
 # EvLens WebScraper
 
-A comprehensive web scraping API designed for event sentiment analysis across multiple social media platforms and web sources. This service combines Node.js and Python to extract, process, and analyze social media content related to events.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)](https://nodejs.org/)
+[![Python Version](https://img.shields.io/badge/python-%3E%3D3.8-blue)](https://www.python.org/)
 
-## Overview
+A comprehensive web scraping API for event sentiment analysis across multiple social media platforms and web sources.
 
-EvLens WebScraper is a dual-service architecture that enables scraping of social media posts, comments, and engagement metrics from platforms including Instagram, Twitter, LinkedIn, Reddit, news sites, and blogs. The system is built to analyze public sentiment and engagement around specific events.
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Node.js Setup](#nodejs-setup)
+  - [Python Setup](#python-setup)
+  - [Environment Configuration](#environment-configuration)
+- [Quick Start](#quick-start)
+- [API Reference](#api-reference)
+  - [Base URL](#base-url)
+  - [Authentication](#authentication)
+  - [Endpoints](#endpoints)
+    - [Health Check](#health-check)
+    - [Scrape Single URL](#scrape-single-url)
+    - [Scrape Multiple URLs](#scrape-multiple-urls)
+    - [Scrape Profile](#scrape-profile)
+    - [Scrape Event](#scrape-event)
+    - [Supported Platforms](#supported-platforms)
+- [Request & Response Formats](#request--response-formats)
+- [Error Handling](#error-handling)
+- [Rate Limiting](#rate-limiting)
+- [Data Export](#data-export)
+- [Platform Support](#platform-support)
+- [Deployment](#deployment)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
+---
 
 ## Features
 
-### Multi-Platform Support
+- Multi-platform scraping (Instagram, Twitter, LinkedIn, Reddit, News, Blogs)
+- Event-based sentiment analysis across platforms
+- Bulk URL processing
+- Profile and user activity analysis
+- JSON and CSV export formats
+- Rate limiting and security measures
+- Comprehensive engagement metrics
+- Real-time scraping with browser automation
 
-- **Instagram**: Post content, comments, likes, profile data, and reels
-- **Twitter**: Tweets, replies, retweets, likes, and profile information
-- **LinkedIn**: Posts, reactions, comments, and professional content
-- **Reddit**: Posts, comments, upvotes, awards, and subreddit data
-- **Generic Web**: Articles, blog posts, and general web content
-- **News Sources**: News articles and coverage
-- **Blog Platforms**: Blog posts and reviews
-
-### Core Capabilities
-
-- Single URL scraping with detailed metadata extraction
-- Bulk URL scraping for multiple sources simultaneously
-- Profile scraping to analyze user activity and engagement
-- Event-based scraping across multiple platforms
-- Sentiment analysis based on comment content
-- Engagement metrics calculation and aggregation
-- Export functionality in JSON and CSV formats
-- Rate limiting and request throttling
-- Comprehensive error handling and logging
+---
 
 ## Architecture
 
-### Node.js Service
+**Dual-Service Design**
 
-The primary API server built with Express.js handles:
+```
+┌─────────────────────┐         ┌──────────────────────┐
+│   Node.js Service   │────────▶│   Python Service     │
+│   (Express.js)      │         │   (Flask)            │
+│   Port: 3000        │         │   Port: 5000         │
+│                     │         │                      │
+│ - API Routing       │         │ - Instagram Scraper  │
+│ - Data Formatting   │         │ - Twitter Scraper    │
+│ - Reddit Scraper    │         │ - LinkedIn Scraper   │
+│ - Generic Scraper   │         │ - Playwright Engine  │
+│ - Export Generator  │         │                      │
+└─────────────────────┘         └──────────────────────┘
+```
 
-- HTTP request routing and validation
-- Rate limiting and security measures
-- Data formatting and aggregation
-- CSV/Excel export generation
-- Reddit and generic web scraping
-- Orchestration of Python scrapers
-
-### Python Service
-
-A Flask-based microservice specialized in:
-
-- Instagram scraping using Playwright
-- Twitter scraping with browser automation
-- LinkedIn content extraction
-- Complex JavaScript-rendered page handling
+---
 
 ## Installation
 
 ### Prerequisites
 
-- Node.js 16.x or higher
-- Python 3.8 or higher
-- npm or yarn package manager
-- pip package manager
+| Requirement | Version |
+|-------------|---------|
+| Node.js | ≥ 16.0.0 |
+| Python | ≥ 3.8 |
+| npm/yarn | Latest |
+| pip | Latest |
 
 ### Node.js Setup
 
@@ -77,7 +99,7 @@ playwright install
 
 ### Environment Configuration
 
-Create a `.env` file in the root directory:
+Create `.env` file in root directory:
 
 ```env
 PORT=3000
@@ -87,41 +109,40 @@ RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
 ```
 
-## Running the Services
+---
 
-### Start Node.js API Server
+## Quick Start
 
+**Terminal 1 - Start Node.js Server**
 ```bash
 npm start
 ```
 
-For development with auto-reload:
-
-```bash
-npm run dev
-```
-
-### Start Python Scraper Service
-
+**Terminal 2 - Start Python Service**
 ```bash
 npm run python:api
 ```
 
-Or directly:
-
+**Test the API**
 ```bash
-python python_scrapers/scraper_api.py
+curl http://localhost:3000/health
 ```
 
-Both services must be running simultaneously for full functionality.
+---
 
-## API Documentation
+## API Reference
 
 ### Base URL
 
 ```
 http://localhost:3000/api/scraper
 ```
+
+Production: `https://your-domain.com/api/scraper`
+
+### Authentication
+
+Currently no authentication required. Implement before production deployment.
 
 ### Endpoints
 
@@ -131,10 +152,7 @@ http://localhost:3000/api/scraper
 GET /health
 ```
 
-Returns the operational status of the Node.js service.
-
 **Response**
-
 ```json
 {
   "status": "OK",
@@ -142,33 +160,38 @@ Returns the operational status of the Node.js service.
 }
 ```
 
+---
+
 #### Scrape Single URL
 
 ```http
 POST /api/scraper/scrape
 ```
 
-Extract content from a single social media post or web page.
-
 **Request Body**
-
 ```json
 {
-  "url": "https://reddit.com/r/example/comments/abc123",
+  "url": "https://reddit.com/r/events/comments/abc123",
   "eventName": "Tech Conference 2025"
 }
 ```
 
-**Response**
+**Parameters**
 
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| url | string | Yes | Valid HTTP/HTTPS URL |
+| eventName | string | Yes | Event identifier |
+
+**Success Response** `200 OK`
 ```json
 {
   "success": true,
   "data": {
-    "url": "https://reddit.com/r/example/comments/abc123",
+    "url": "string",
     "platform": "reddit",
     "event_name": "Tech Conference 2025",
-    "post_text": "Post title and content",
+    "post_text": "string",
     "comments": [...],
     "likes": 150,
     "shares": 25,
@@ -182,19 +205,28 @@ Extract content from a single social media post or web page.
     "sentiment_data": {
       "positive": 15,
       "negative": 5,
-      "neutral": 5,
-      "total": 25
+      "neutral": 5
     },
     "metadata": {
       "author": "username",
       "post_type": "post",
-      "hashtags": ["tech", "conference"],
-      "mentions": ["user1", "user2"]
+      "hashtags": ["tech"],
+      "mentions": ["user1"]
     }
   },
   "timestamp": "2025-10-04T12:00:00.000Z"
 }
 ```
+
+**Error Response** `400 Bad Request`
+```json
+{
+  "success": false,
+  "error": "URL is required"
+}
+```
+
+---
 
 #### Scrape Multiple URLs
 
@@ -202,31 +234,35 @@ Extract content from a single social media post or web page.
 POST /api/scraper/scrape-multiple
 ```
 
-Scrape multiple URLs in a single request.
-
 **Request Body**
-
 ```json
 {
   "urls": [
     "https://reddit.com/r/example/comments/abc123",
-    "https://twitter.com/user/status/123456789",
-    "https://linkedin.com/posts/activity-123"
+    "https://example.com/article"
   ],
   "eventName": "Product Launch 2025"
 }
 ```
 
-**Response**
+**Parameters**
 
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| urls | array | Yes | Array of URLs (max 50) |
+| eventName | string | No | Event identifier |
+
+**Success Response** `200 OK`
 ```json
 {
   "success": true,
   "data": [...],
-  "count": 3,
+  "count": 2,
   "timestamp": "2025-10-04T12:00:00.000Z"
 }
 ```
+
+---
 
 #### Scrape Profile
 
@@ -234,10 +270,7 @@ Scrape multiple URLs in a single request.
 POST /api/scraper/scrape-profile
 ```
 
-Scrape user profile information and recent posts.
-
 **Request Body**
-
 ```json
 {
   "profileUrl": "https://instagram.com/username",
@@ -246,13 +279,21 @@ Scrape user profile information and recent posts.
 }
 ```
 
-**Response**
+**Parameters**
 
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| profileUrl | string | Yes | Profile URL |
+| platform | string | Yes | Platform name |
+| eventName | string | No | Event identifier |
+
+**Supported Platforms**: `instagram`, `twitter`, `linkedin`, `reddit`
+
+**Success Response** `200 OK`
 ```json
 {
   "profile_url": "https://instagram.com/username",
   "platform": "instagram",
-  "event_name": "Brand Campaign 2025",
   "profile_data": {
     "username": "username",
     "followers": 15000,
@@ -275,24 +316,23 @@ Scrape user profile information and recent posts.
 }
 ```
 
+---
+
 #### Scrape Event
 
 ```http
 POST /api/scraper/scrape-event
 ```
 
-Comprehensive event analysis across multiple platforms.
-
 **Request Body**
-
 ```json
 {
   "eventName": "Music Festival 2025",
   "eventDate": "2025-08-15",
-  "platforms": ["reddit", "twitter", "instagram", "news"],
+  "platforms": ["reddit", "twitter", "news"],
   "socialLinks": {
-    "instagram": "https://instagram.com/festivalofficial",
-    "twitter": "https://twitter.com/festival2025"
+    "instagram": "https://instagram.com/festival",
+    "twitter": "https://twitter.com/festival"
   },
   "output": "json"
 }
@@ -300,14 +340,17 @@ Comprehensive event analysis across multiple platforms.
 
 **Parameters**
 
-- `eventName` (required): Name of the event to analyze
-- `eventDate` (required): Event date in YYYY-MM-DD format
-- `platforms` (optional): Array of platforms to search. Default: all platforms
-- `socialLinks` (optional): Object with platform-specific URLs
-- `output` (optional): Response format - "json" or "excel". Default: "json"
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| eventName | string | Yes | Event name |
+| eventDate | string | Yes | Date (YYYY-MM-DD) |
+| platforms | array | No | Platforms to search (default: all) |
+| socialLinks | object | No | Platform-specific URLs |
+| output | string | No | "json" or "excel" (default: json) |
 
-**Response**
+**Available Platforms**: `reddit`, `twitter`, `instagram`, `linkedin`, `news`, `blogs`, `generic`
 
+**Success Response** `200 OK`
 ```json
 {
   "success": true,
@@ -324,11 +367,8 @@ Comprehensive event analysis across multiple platforms.
     "platforms": {
       "reddit": {
         "totalPosts": 150,
-        "totalEngagement": 50000
-      },
-      "twitter": {
-        "totalPosts": 200,
-        "totalEngagement": 75000
+        "totalEngagement": 50000,
+        "postTypes": {...}
       }
     }
   },
@@ -336,16 +376,30 @@ Comprehensive event analysis across multiple platforms.
 }
 ```
 
-#### Get Supported Platforms
+**Excel Output Response**
+```json
+{
+  "success": true,
+  "message": "Excel file generated successfully",
+  "filename": "event_analysis_music_festival_2025_2025-10-04.csv",
+  "filepath": "/path/to/exports/filename.csv",
+  "summary": {
+    "totalPosts": 150,
+    "platforms": ["reddit", "twitter"],
+    "totalEngagement": 125000
+  }
+}
+```
+
+---
+
+#### Supported Platforms
 
 ```http
 GET /api/scraper/supported-platforms
 ```
 
-List all supported platforms.
-
-**Response**
-
+**Success Response** `200 OK`
 ```json
 {
   "success": true,
@@ -360,162 +414,136 @@ List all supported platforms.
 }
 ```
 
-### Python Service Endpoints
+---
 
-The Python service runs on port 5000 and provides specialized scrapers.
+## Request & Response Formats
 
-#### Health Check
+### Standard Response Structure
 
-```http
-GET http://localhost:5000/health
-```
-
-#### Scrape Post
-
-```http
-POST http://localhost:5000/scrape
-```
-
-**Request Body**
-
+**Success**
 ```json
 {
-  "url": "https://instagram.com/p/abc123",
-  "platform": "instagram",
-  "event_name": "Event Name"
+  "success": true,
+  "data": {...},
+  "timestamp": "ISO 8601 string"
 }
 ```
 
-#### Scrape Profile
-
-```http
-POST http://localhost:5000/scrape-profile
-```
-
-#### Search Posts
-
-```http
-POST http://localhost:5000/search-posts
-```
-
-**Request Body**
-
-```json
-{
-  "hashtag": "#festival2025",
-  "platform": "instagram",
-  "event_name": "Music Festival",
-  "limit": 50
-}
-```
-
-## Data Models
-
-### Post Object
-
-```json
-{
-  "url": "string",
-  "platform": "string",
-  "post_text": "string",
-  "author": "string",
-  "comments": [
-    {
-      "user": "string",
-      "text": "string",
-      "likes": "number",
-      "timestamp": "string"
-    }
-  ],
-  "likes": "number",
-  "shares": "number",
-  "timestamp": "string",
-  "engagement": {
-    "total_interactions": "number",
-    "likes": "number",
-    "comments": "number",
-    "shares": "number"
-  },
-  "metadata": {
-    "author": "string",
-    "post_type": "string",
-    "hashtags": ["string"],
-    "mentions": ["string"]
-  }
-}
-```
-
-### Profile Object
-
-```json
-{
-  "username": "string",
-  "followers": "number",
-  "following": "number",
-  "posts_count": "number",
-  "posts": ["Post[]"],
-  "overall_sentiment": {
-    "positive": "number",
-    "negative": "number",
-    "neutral": "number",
-    "positive_percentage": "string"
-  }
-}
-```
-
-## Error Handling
-
-All endpoints return standardized error responses:
-
+**Error**
 ```json
 {
   "success": false,
-  "error": "Error message description",
-  "timestamp": "2025-10-04T12:00:00.000Z"
+  "error": "Error message",
+  "timestamp": "ISO 8601 string"
 }
 ```
 
-### Common HTTP Status Codes
+### Comment Object
+```json
+{
+  "user": "string",
+  "text": "string",
+  "likes": "number",
+  "timestamp": "string",
+  "replies_count": "number"
+}
+```
 
-- `200`: Success
-- `400`: Bad Request - Invalid parameters
-- `404`: Not Found - Resource doesn't exist
-- `429`: Too Many Requests - Rate limit exceeded
-- `500`: Internal Server Error
-- `501`: Not Implemented
+### Engagement Object
+```json
+{
+  "total_interactions": "number",
+  "likes": "number",
+  "comments": "number",
+  "shares": "number",
+  "engagement_rate": "string | null"
+}
+```
+
+---
+
+## Error Handling
+
+### HTTP Status Codes
+
+| Code | Description |
+|------|-------------|
+| 200 | Success |
+| 400 | Bad Request - Invalid parameters |
+| 404 | Not Found |
+| 429 | Too Many Requests |
+| 500 | Internal Server Error |
+| 501 | Not Implemented |
+
+### Common Errors
+
+**Invalid URL Format**
+```json
+{
+  "success": false,
+  "error": "Invalid URL format"
+}
+```
+
+**Unsupported Platform**
+```json
+{
+  "success": false,
+  "error": "Unsupported platform: facebook"
+}
+```
+
+**Rate Limit Exceeded**
+```json
+{
+  "success": false,
+  "error": "Too many requests from this IP"
+}
+```
+
+**Python Service Unavailable**
+```json
+{
+  "success": false,
+  "error": "Python scraper service unavailable. Please ensure it is running."
+}
+```
+
+**Invalid Date Format**
+```json
+{
+  "success": false,
+  "error": "Invalid event date format. Use YYYY-MM-DD"
+}
+```
+
+---
 
 ## Rate Limiting
 
-Default rate limits apply to all endpoints:
+**Default Configuration**
 
-- **Window**: 15 minutes (900,000 milliseconds)
-- **Max Requests**: 100 per window
-- **Response**: 429 status with error message
+- Window: 15 minutes
+- Max Requests: 100 per IP
+- Response: HTTP 429 with error message
 
-Configure in `.env`:
-
+**Custom Configuration** (`.env`)
 ```env
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
 ```
 
-## Export Formats
+---
 
-### JSON Export
+## Data Export
 
-Default format with complete data structure.
+### JSON Format
+Default output with complete data structure.
 
-### Excel/CSV Export
+### CSV/Excel Format
+Request with `"output": "excel"` parameter.
 
-Request with `"output": "excel"` to receive:
-
-- Flattened data structure
-- CSV file generation
-- Saved to `exports/` directory
-- Summary statistics included
-
-CSV columns:
-
+**CSV Columns**
 - eventName
 - eventDate
 - platform
@@ -530,159 +558,91 @@ CSV columns:
 - postDate
 - engagement
 
-## Logging
+**Export Location**: `exports/` directory
 
-Logs are stored in the `logs/` directory:
+---
 
-- `error.log`: Error-level logs only
-- `combined.log`: All log levels
+## Platform Support
 
-Log format includes:
+| Platform | Features | Method |
+|----------|----------|--------|
+| Reddit | Posts, comments, subreddits | Direct API |
+| Twitter | Tweets, profiles, searches | Playwright |
+| Instagram | Posts, reels, profiles | Playwright |
+| LinkedIn | Posts, profiles, reactions | Playwright |
+| Generic Web | Articles, blogs | Cheerio |
+| News Sites | Articles | Mock (implement API) |
+| Blogs | Posts | Mock (implement API) |
 
-- Timestamp
-- Log level
-- Service name
-- Message
-- Stack traces for errors
-
-## Security
-
-### Implemented Measures
-
-- Helmet.js for HTTP header security
-- CORS configuration
-- Rate limiting
-- Input validation
-- URL sanitization
-- Request timeout enforcement
-
-### Best Practices
-
-- Never commit `.env` files
-- Rotate API keys regularly
-- Use HTTPS in production
-- Implement authentication for production deployment
-- Monitor rate limit abuse
-- Regular security updates
+---
 
 ## Deployment
 
-### Production Considerations
-
-1. **Environment Variables**: Set production values for all environment variables
-2. **Process Management**: Use PM2 or similar for Node.js process management
-3. **Reverse Proxy**: Configure nginx or Apache as reverse proxy
-4. **SSL/TLS**: Implement HTTPS with valid certificates
-5. **Database**: Consider adding database for caching and analytics
-6. **Monitoring**: Implement application monitoring and alerting
-7. **Scaling**: Configure load balancing for horizontal scaling
-
-### Docker Deployment
-
-Create `Dockerfile` for containerization:
-
-```dockerfile
-FROM node:16
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-
-COPY . .
-
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-### Environment Configuration
-
-Production `.env` example:
+### Production Environment Variables
 
 ```env
 PORT=3000
-PYTHON_API_URL=http://python-scraper:5000
+PYTHON_API_URL=http://python-service:5000
 NODE_ENV=production
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
 LOG_LEVEL=error
 ```
 
+### Security Checklist
+
+- [ ] Enable HTTPS/SSL
+- [ ] Implement authentication
+- [ ] Configure CORS properly
+- [ ] Set secure environment variables
+- [ ] Enable production logging
+- [ ] Configure reverse proxy (nginx/Apache)
+- [ ] Set up monitoring and alerts
+- [ ] Regular security updates
+
+---
+
 ## Troubleshooting
 
-### Python Service Connection Failed
+### Python Service Not Responding
 
 **Error**: `Python scraper service unavailable`
 
-**Solution**: Ensure Python service is running on configured port
-
+**Solution**:
 ```bash
 python python_scrapers/scraper_api.py
 ```
+Verify Python service runs on port 5000
 
-### Playwright Installation Issues
+### Playwright Browser Issues
 
-**Error**: Browser executable not found
+**Error**: `Browser executable not found`
 
-**Solution**: Install Playwright browsers
-
+**Solution**:
 ```bash
 playwright install
 ```
 
-### Rate Limit Exceeded
+### Rate Limit Issues
 
 **Error**: `Too many requests from this IP`
 
-**Solution**: Wait for rate limit window to reset or adjust limits in configuration
+**Solution**: Wait 15 minutes or adjust rate limits in configuration
 
-### Scraping Timeout
+### Timeout Errors
 
-**Error**: Timeout waiting for selector
+**Error**: `Timeout waiting for selector`
 
 **Solution**: Increase timeout in `src/config/scraperConfig.js`
 
-## Limitations
-
-### Platform Limitations
-
-- **Instagram**: Requires authentication for private accounts
-- **Twitter**: API rate limits apply
-- **LinkedIn**: Limited to public posts
-- **Reddit**: Subject to Reddit API terms
-
-### Technical Limitations
-
-- JavaScript-heavy sites require Python service
-- Some platforms may implement anti-scraping measures
-- Rate limits prevent excessive requests
-- Browser automation increases resource usage
-
-## Contributing
-
-Contributions are welcome. Please ensure:
-
-- Code follows existing style conventions
-- All tests pass
-- Documentation is updated
-- Commit messages are descriptive
+---
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License - see [LICENSE](LICENSE) file for details
 
-## Support
+---
 
-For issues, questions, or contributions:
+**Repository**: [EvLens-WebScraper](https://github.com/1DeepanshuPathak1/EvLens-WebScraper)
 
-- GitHub Issues: [Repository Issues](https://github.com/1DeepanshuPathak1/EvLens-WebScraper/issues)
-- Repository: [EvLens-WebScraper](https://github.com/1DeepanshuPathak1/EvLens-WebScraper)
-
-## Version History
-
-### 1.0.0
-
-- Initial release
-- Multi-platform scraping support
-- Event-based analysis
-- Excel export functionality
-- Comprehensive API documentation
+**Issues**: [Report Issues](https://github.com/1DeepanshuPathak1/EvLens-WebScraper/issues)
