@@ -57,6 +57,24 @@ const scraperController = {
     }
   },
 
+  async scrapeEvent(req, res, next) {
+    try {
+      const { eventName, platforms } = req.body;
+      logger.info(`Scraping event: ${eventName} from platforms: ${platforms.join(', ')}`);
+      
+      const result = await scraperService.scrapeEvent(eventName, platforms);
+      
+      res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      logger.error(`Error scraping event: ${error.message}`);
+      next(error);
+    }
+  },
+
   getSupportedPlatforms(req, res) {
     const platforms = ['instagram', 'twitter', 'reddit', 'linkedin', 'generic'];
     res.json({

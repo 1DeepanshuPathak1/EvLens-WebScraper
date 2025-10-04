@@ -1,11 +1,18 @@
 const validator = {
   validateScrapeRequest(req, res, next) {
-    const { url } = req.body;
+    const { url, eventName } = req.body;
     
     if (!url) {
       return res.status(400).json({
         success: false,
         error: 'URL is required'
+      });
+    }
+
+    if (!eventName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Event name is required'
       });
     }
 
@@ -83,6 +90,43 @@ const validator = {
       return res.status(400).json({
         success: false,
         error: `Unsupported platform. Supported: ${supportedPlatforms.join(', ')}`
+      });
+    }
+
+    next();
+  },
+
+  validateEventScrapeRequest(req, res, next) {
+    const { eventName, platforms } = req.body;
+    
+    if (!eventName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Event name is required'
+      });
+    }
+
+    if (!platforms || !Array.isArray(platforms)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Platforms must be an array'
+      });
+    }
+
+    if (platforms.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one platform is required'
+      });
+    }
+
+    const supportedPlatforms = ['instagram', 'twitter', 'linkedin', 'reddit'];
+    const unsupportedPlatforms = platforms.filter(p => !supportedPlatforms.includes(p.toLowerCase()));
+    
+    if (unsupportedPlatforms.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Unsupported platforms: ${unsupportedPlatforms.join(', ')}. Supported: ${supportedPlatforms.join(', ')}`
       });
     }
 

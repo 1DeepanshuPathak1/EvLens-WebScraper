@@ -34,6 +34,45 @@ const dataFormatter = {
     };
   },
 
+  formatEventData(rawData, platform, eventName) {
+    if (!rawData || rawData.error) {
+      return {
+        success: false,
+        error: rawData.error || 'No data available',
+        platform,
+        event_name: eventName,
+        scraped_at: new Date().toISOString()
+      };
+    }
+
+    return {
+      success: true,
+      platform,
+      event_name: eventName,
+      scraped_at: new Date().toISOString(),
+      total_results: rawData.totalResults || rawData.posts?.length || 0,
+      time_range: rawData.timeRange || 'unknown',
+      posts: (rawData.posts || []).map(post => ({
+        id: post.id || '',
+        url: post.url || '',
+        title: this.cleanText(post.title || ''),
+        text: this.cleanText(post.text || ''),
+        engagement: {
+          likes: this.parseNumber(post.score || post.likes || 0),
+          comments: this.parseNumber(post.numComments || post.comments || 0),
+          shares: this.parseNumber(post.shares || 0)
+        },
+        created_at: post.created || new Date().toISOString(),
+        metadata: {
+          subreddit: post.subreddit || '',
+          author: post.author || 'Unknown',
+          hashtags: this.extractHashtags(post.text || post.title || ''),
+          mentions: this.extractMentions(post.text || post.title || '')
+        }
+      }))
+    };
+  },
+
   formatProfile(rawData, profileUrl, platform, eventName) {
     return {
       profile_url: profileUrl,

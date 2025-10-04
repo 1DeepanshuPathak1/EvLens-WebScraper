@@ -37,6 +37,60 @@ const scraperService = {
     return dataFormatter.format(rawData, url, platform, eventName);
   },
 
+  async scrapeEvent(eventName, platforms, timeRange = '2months') {
+    logger.info(`Scraping event: ${eventName} from platforms: ${platforms.join(', ')}`);
+    
+    const results = await Promise.allSettled(
+      platforms.map(async platform => {
+        try {
+          let data;
+          switch (platform.toLowerCase()) {
+            case 'reddit':
+              data = await redditScraper.searchEvent(eventName, timeRange);
+              break;
+            case 'twitter':
+              data = await twitterScraper.searchEvent(eventName, timeRange);
+              break;
+            case 'instagram':
+              data = await instagramScraper.searchEvent(eventName, timeRange);
+              break;
+            case 'linkedin':
+              data = await linkedinScraper.searchEvent(eventName, timeRange);
+              break;
+            default:
+              throw new Error(`Unsupported platform: ${platform}`);
+          }
+          return {
+            platform,
+            data: dataFormatter.formatEventData(data, platform, eventName)
+          };
+        } catch (error) {
+          logger.error(`Error scraping ${platform} for event ${eventName}: ${error.message}`);
+          throw error;
+        }
+      })
+    );
+
+    const successfulResults = results
+      .filter(result => result.status === 'fulfilled')
+      .map(result => result.value);
+
+    const failedPlatforms = results
+      .filter(result => result.status === 'rejected')
+      .map((result, index) => ({
+        platform: platforms[index],
+        error: result.reason.message
+      }));
+
+    return {
+      eventName,
+      timeRange,
+      results: successfulResults,
+      failedPlatforms,
+      timestamp: new Date().toISOString()
+    };
+  },
+
   async scrapeMultipleUrls(urls, eventName = '') {
     const results = await Promise.allSettled(
       urls.map(url => this.scrapeUrl(url, eventName))

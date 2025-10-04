@@ -4,6 +4,50 @@ const config = require('../../config/scraperConfig');
 const logger = require('../../utils/logger');
 
 const redditScraper = {
+  async searchEvent(eventName, timeRange = '2months') {
+    try {
+      const searchUrl = `https://www.reddit.com/search.json?q=${encodeURIComponent(eventName)}&sort=relevance&t=${timeRange}&type=link&raw_json=1`;
+      
+      const response = await axios.get(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-US,en;q=0.9'
+        },
+        timeout: config.scraping.timeout
+      });
+
+      if (!response.data || !response.data.data || !Array.isArray(response.data.data.children)) {
+        throw new Error('Invalid Reddit search response structure');
+      }
+
+      const posts = response.data.data.children
+        .map(child => child.data)
+        .filter(post => post && post.title)
+        .map(post => ({
+          id: post.id,
+          title: post.title,
+          text: post.selftext,
+          url: `https://reddit.com${post.permalink}`,
+          subreddit: post.subreddit_name_prefixed,
+          score: post.score,
+          numComments: post.num_comments,
+          created: new Date(post.created_utc * 1000).toISOString()
+        }));
+
+      return {
+        platform: 'reddit',
+        query: eventName,
+        timeRange,
+        totalResults: posts.length,
+        posts
+      };
+    } catch (error) {
+      logger.error(`Reddit search error: ${error.message}`);
+      throw new Error(`Failed to search Reddit: ${error.message}`);
+    }
+  },
+
   async scrape(url) {
     try {
       let jsonUrl = url.endsWith('.json') ? url : `${url}.json`;

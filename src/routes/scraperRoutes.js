@@ -6,6 +6,7 @@ const validator = require('../middleware/validator');
 router.post('/scrape', validator.validateScrapeRequest, scraperController.scrapeUrl);
 router.post('/scrape-multiple', validator.validateMultipleScrapeRequest, scraperController.scrapeMultipleUrls);
 router.post('/scrape-profile', validator.validateProfileScrapeRequest, scraperController.scrapeProfile);
+router.post('/scrape-event', validator.validateEventScrapeRequest, scraperController.scrapeEvent);
 router.get('/supported-platforms', scraperController.getSupportedPlatforms);
 
 module.exports = router;
