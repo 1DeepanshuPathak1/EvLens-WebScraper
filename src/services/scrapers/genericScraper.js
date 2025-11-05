@@ -8,125 +8,260 @@ const genericScraper = {
     try {
       const response = await axios.get(url, {
         headers: {
-          'User-Agent': config.scraping.userAgent
+          'User-Agent': config.scraping.userAgent,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         },
-        timeout: config.scraping.timeout
+        timeout: config.scraping.timeout,
+        maxRedirects: 5
       });
 
       const $ = cheerio.load(response.data);
       
-      const title = $('h1').first().text() || $('title').text();
-      const metaDescription = $('meta[name="description"]').attr('content') || '';
+      $('script, style, nav, header, footer, .ad, .advertisement').remove();
       
-      const paragraphs = [];
-      $('p').each((i, el) => {
-        const text = $(el).text().trim();
-        if (text.length > 20) {
-          paragraphs.push(text);
-        }
-      });
-
+      const title = this.extractTitle($);
+      const content = this.extractContent($);
       const comments = this.extractComments($);
-      const images = this.extractImages($);
-      const links = this.extractLinks($, url);
+      const author = this.extractAuthor($);
+      const timestamp = this.extractTimestamp($);
+      const metadata = this.extractMetadata($);
 
       return {
-        post_text: title + '\n' + metaDescription,
-        content: paragraphs.join('\n'),
-        comments,
-        images,
-        links,
-        timestamp: this.extractTimestamp($),
-        author: this.extractAuthor($),
+        post_text: title,
+        content: content,
+        comments: comments,
+        images: [],
+        links: [],
+        timestamp: timestamp,
+        author: author,
+        likes: 0,
+        shares: 0,
+        engagement: {
+          likes: 0,
+          comments: comments.length,
+          shares: 0
+        },
         metadata: {
-          word_count: paragraphs.join(' ').split(' ').length,
-          paragraph_count: paragraphs.length
+          ...metadata,
+          word_count: content.split(' ').length,
+          url: url
         }
       };
     } catch (error) {
-      logger.error(`Generic scraping error: ${error.message}`);
+      logger.error(`Generic scraping error for ${url}: ${error.message}`);
       return { error: error.message };
     }
   },
 
+  extractTitle($) {
+    const titleSelectors = [
+      'h1',
+      'meta[property="og:title"]',
+      'meta[name="twitter:title"]',
+      'title',
+      '.post-title',
+      '.article-title',
+      '[class*="title"]'
+    ];
+    
+    for (const selector of titleSelectors) {
+      const el = $(selector).first();
+      if (el.length) {
+        const text = el.attr('content') || el.text().trim();
+        if (text && text.length > 5) {
+          return text;
+        }
+      }
+    }
+    
+    return 'Untitled';
+  },
+
+  extractContent($) {
+    const contentSelectors = [
+      'article',
+      '.post-content',
+      '.entry-content',
+      '.article-content',
+      '.content',
+      'main',
+      '[role="main"]'
+    ];
+    
+    let content = '';
+    
+    for (const selector of contentSelectors) {
+      const container = $(selector).first();
+      if (container.length) {
+        const paragraphs = [];
+        container.find('p').each((i, el) => {
+          const text = $(el).text().trim();
+          if (text.length > 50) {
+            paragraphs.push(text);
+          }
+        });
+        
+        if (paragraphs.length > 0) {
+          content = paragraphs.join('\n');
+          break;
+        }
+      }
+    }
+    
+    if (!content) {
+      const paragraphs = [];
+      $('p').each((i, el) => {
+        const text = $(el).text().trim();
+        if (text.length > 50) {
+          paragraphs.push(text);
+        }
+      });
+      content = paragraphs.slice(0, 20).join('\n');
+    }
+    
+    return content || 'No content extracted';
+  },
+
   extractComments($) {
     const comments = [];
-    const commentSelectors = ['.comment', '.comment-item', '[class*="comment"]', 'article'];
+    const commentSelectors = [
+      '.comment',
+      '.comment-item',
+      '.comment-body',
+      '[class*="comment"]',
+      '[id*="comment"]',
+      '.discussion-item',
+      '.reply'
+    ];
+    
+    const seenTexts = new Set();
     
     commentSelectors.forEach(selector => {
       $(selector).each((i, el) => {
-        const text = $(el).text().trim();
-        if (text.length > 10 && text.length < 1000) {
+        const $el = $(el);
+        const text = $el.text().trim();
+        
+        if (text.length > 20 && text.length < 2000 && !seenTexts.has(text)) {
+          seenTexts.add(text);
+          
+          const authorEl = $el.find('.author, .comment-author, [class*="author"]').first();
+          const author = authorEl.text().trim() || 'Anonymous';
+          
+          const dateEl = $el.find('time, .date, [class*="date"]').first();
+          const date = dateEl.attr('datetime') || dateEl.text().trim();
+          
           comments.push({
-            user: 'Anonymous',
+            user: author,
             text: text,
-            likes: 0
+            likes: 0,
+            timestamp: date ? this.parseDate(date) : new Date().toISOString(),
+            replies_count: 0
           });
         }
       });
     });
 
-    return comments.slice(0, 50);
+    return comments.slice(0, 100);
   },
 
-  extractImages($) {
-    const images = [];
-    $('img').each((i, el) => {
-      const src = $(el).attr('src');
-      if (src && !src.includes('icon') && !src.includes('logo')) {
-        images.push(src);
+  extractAuthor($) {
+    const authorSelectors = [
+      'meta[name="author"]',
+      'meta[property="article:author"]',
+      '[rel="author"]',
+      '.author',
+      '.author-name',
+      '[class*="author"]',
+      '[itemprop="author"]'
+    ];
+    
+    for (const selector of authorSelectors) {
+      const el = $(selector).first();
+      if (el.length) {
+        const author = el.attr('content') || el.text().trim();
+        if (author && author.length > 0 && author.length < 100) {
+          return author;
+        }
       }
-    });
-    return images.slice(0, 10);
-  },
-
-  extractLinks($, baseUrl) {
-    const links = [];
-    $('a').each((i, el) => {
-      const href = $(el).attr('href');
-      if (href && href.startsWith('http')) {
-        links.push(href);
-      }
-    });
-    return [...new Set(links)].slice(0, 20);
+    }
+    
+    return 'Unknown';
   },
 
   extractTimestamp($) {
-    const timeEl = $('time').first().attr('datetime');
-    if (timeEl) return new Date(timeEl).toISOString();
-    
-    const datePatterns = [
-      /(\d{4})-(\d{2})-(\d{2})/,
-      /(\d{2})\/(\d{2})\/(\d{4})/
+    const dateSelectors = [
+      'time[datetime]',
+      'meta[property="article:published_time"]',
+      'meta[name="publish-date"]',
+      '.publish-date',
+      '.post-date',
+      '[class*="date"]',
+      '[itemprop="datePublished"]'
     ];
     
+    for (const selector of dateSelectors) {
+      const el = $(selector).first();
+      if (el.length) {
+        const date = el.attr('datetime') || el.attr('content') || el.text().trim();
+        if (date) {
+          try {
+            return new Date(date).toISOString();
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+    }
+    
     const bodyText = $('body').text();
+    const datePatterns = [
+      /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+      /\d{4}-\d{2}-\d{2}/,
+      /\d{2}\/\d{2}\/\d{4}/,
+      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
+    ];
+    
     for (const pattern of datePatterns) {
       const match = bodyText.match(pattern);
       if (match) {
-        return new Date(match[0]).toISOString();
+        try {
+          return new Date(match[0]).toISOString();
+        } catch (e) {
+          continue;
+        }
       }
     }
     
     return new Date().toISOString();
   },
 
-  extractAuthor($) {
-    const authorSelectors = [
-      'meta[name="author"]',
-      '[rel="author"]',
-      '.author',
-      '[class*="author"]'
-    ];
+  extractMetadata($) {
+    const metadata = {};
     
-    for (const selector of authorSelectors) {
-      const author = $(selector).first().attr('content') || $(selector).first().text();
-      if (author && author.trim()) {
-        return author.trim();
+    metadata.description = $('meta[name="description"]').attr('content') || '';
+    metadata.keywords = $('meta[name="keywords"]').attr('content') || '';
+    metadata.language = $('html').attr('lang') || 'en';
+    
+    const ogTitle = $('meta[property="og:title"]').attr('content');
+    const ogDescription = $('meta[property="og:description"]').attr('content');
+    const ogImage = $('meta[property="og:image"]').attr('content');
+    
+    if (ogTitle) metadata.og_title = ogTitle;
+    if (ogDescription) metadata.og_description = ogDescription;
+    if (ogImage) metadata.og_image = ogImage;
+    
+    return metadata;
+  },
+
+  parseDate(dateString) {
+    try {
+      const date = new Date(dateString);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString();
       }
+    } catch (e) {
     }
-    
-    return 'Unknown';
+    return new Date().toISOString();
   }
 };
 

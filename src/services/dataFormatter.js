@@ -6,39 +6,52 @@ const logger = require('../utils/logger');
 const dataFormatter = {
   async convertToExcel(data) {
     try {
-      // Flatten the data structure for CSV
       const flattenedData = this.flattenDataForExcel(data);
       
-      // Define fields for CSV
+      if (flattenedData.length === 0) {
+        logger.warn('No data to export to Excel');
+        return {
+          success: false,
+          message: 'No data available to generate Excel file',
+          filename: null,
+          filepath: null
+        };
+      }
+      
       const fields = [
         'eventName',
         'eventDate',
         'platform',
         'postType',
-        'content',
-        'url',
-        'author',
-        'likes',
-        'comments',
-        'shares',
-        'sentiment',
+        'postContent',
+        'postUrl',
+        'postAuthor',
+        'postLikes',
+        'postComments',
+        'postShares',
+        'postSentiment',
         'postDate',
-        'engagement'
+        'postEngagement',
+        'relevanceScore',
+        'commentAuthor',
+        'commentText',
+        'commentLikes',
+        'commentDate',
+        'issues',
+        'praise',
+        'aspects'
       ];
 
       const json2csvParser = new Parser({ fields });
       const csv = json2csvParser.parse(flattenedData);
 
-      // Generate unique filename
       const filename = `event_analysis_${data.eventName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.csv`;
       const filepath = path.join(process.cwd(), 'exports', filename);
 
-      // Ensure exports directory exists
       if (!fs.existsSync(path.join(process.cwd(), 'exports'))) {
         fs.mkdirSync(path.join(process.cwd(), 'exports'));
       }
 
-      // Write CSV file
       fs.writeFileSync(filepath, csv);
 
       return {
@@ -47,9 +60,9 @@ const dataFormatter = {
         filename,
         filepath,
         summary: {
-          totalPosts: flattenedData.length,
-          platforms: data.platforms,
-          periodCovered: data.scrapingPeriod,
+          totalPosts: data.results.reduce((sum, r) => sum + (r.posts?.length || 0), 0),
+          totalComments: flattenedData.filter(row => row.commentText).length,
+          platforms: Object.keys(data.platforms || {}),
           totalEngagement: data.totalEngagement
         }
       };
@@ -62,24 +75,54 @@ const dataFormatter = {
   flattenDataForExcel(data) {
     const flattened = [];
     
+    if (!data.results || !Array.isArray(data.results)) {
+      return flattened;
+    }
+    
     data.results.forEach(result => {
-      if (Array.isArray(result.posts)) {
+      if (result && Array.isArray(result.posts)) {
         result.posts.forEach(post => {
-          flattened.push({
-            eventName: data.eventName,
-            eventDate: data.eventDate,
-            platform: result.platform,
-            postType: post.type || 'post',
-            content: post.text || post.title || '',
-            url: post.url,
-            author: post.metadata?.author || 'Unknown',
-            likes: post.engagement?.likes || 0,
-            comments: post.engagement?.comments || 0,
-            shares: post.engagement?.shares || 0,
-            sentiment: post.sentiment || 'neutral',
-            postDate: post.created_at,
-            engagement: this.calculatePostEngagement(post)
-          });
+          if (post && typeof post === 'object') {
+            const postData = {
+              eventName: data.eventName || 'Unknown Event',
+              eventDate: data.eventDate || new Date().toISOString().split('T')[0],
+              platform: result.platform || 'unknown',
+              postType: post.type || 'post',
+              postContent: this.cleanText(post.text || post.title || ''),
+              postUrl: post.url || '',
+              postAuthor: post.author || (post.metadata && post.metadata.author) || 'Unknown',
+              postLikes: this.parseNumber(post.engagement && post.engagement.likes) || 0,
+              postComments: Array.isArray(post.comments) ? post.comments.length : 0,
+              postShares: this.parseNumber((post.engagement && post.engagement.shares) || (post.engagement && post.engagement.retweets)) || 0,
+              postSentiment: post.sentiment || 'neutral',
+              postDate: post.created || post.postDate || post.created_at || new Date().toISOString(),
+              postEngagement: this.calculatePostEngagement(post),
+              relevanceScore: post.relevanceScore || 0,
+              issues: post.insights && post.insights.issues ? post.insights.issues.join('; ') : '',
+              praise: post.insights && post.insights.praise ? post.insights.praise.join('; ') : '',
+              aspects: post.insights && post.insights.aspects ? post.insights.aspects.join('; ') : ''
+            };
+
+            if (Array.isArray(post.comments) && post.comments.length > 0) {
+              post.comments.forEach(comment => {
+                flattened.push({
+                  ...postData,
+                  commentAuthor: comment.author || comment.user || 'Anonymous',
+                  commentText: this.cleanText(comment.text || ''),
+                  commentLikes: this.parseNumber(comment.likes || 0),
+                  commentDate: comment.postDate || comment.timestamp || comment.created_at || ''
+                });
+              });
+            } else {
+              flattened.push({
+                ...postData,
+                commentAuthor: '',
+                commentText: '',
+                commentLikes: 0,
+                commentDate: ''
+              });
+            }
+          }
         });
       }
     });
@@ -88,9 +131,12 @@ const dataFormatter = {
   },
 
   calculatePostEngagement(post) {
-    const likes = post.engagement?.likes || 0;
-    const comments = post.engagement?.comments || 0;
-    const shares = post.engagement?.shares || 0;
+    if (!post || !post.engagement) return 0;
+    
+    const likes = this.parseNumber(post.engagement.likes) || 0;
+    const comments = Array.isArray(post.comments) ? post.comments.length : (this.parseNumber(post.engagement.comments || post.engagement.replies) || 0);
+    const shares = this.parseNumber(post.engagement.shares || post.engagement.retweets) || 0;
+    
     return likes + (comments * 2) + (shares * 3);
   },
 
@@ -145,19 +191,24 @@ const dataFormatter = {
       platform,
       event_name: eventName,
       scraped_at: new Date().toISOString(),
-      total_results: rawData.totalResults || rawData.posts?.length || 0,
+      total_results: rawData.totalResults || (rawData.posts && rawData.posts.length) || 0,
       time_range: rawData.timeRange || 'unknown',
       posts: (rawData.posts || []).map(post => ({
         id: post.id || '',
         url: post.url || '',
         title: this.cleanText(post.title || ''),
-        text: this.cleanText(post.text || ''),
+        text: this.cleanText(post.text || post.content || ''),
+        author: post.author || 'Unknown',
         engagement: {
-          likes: this.parseNumber(post.score || post.likes || 0),
-          comments: this.parseNumber(post.numComments || post.comments || 0),
-          shares: this.parseNumber(post.shares || 0)
+          likes: this.parseNumber(post.score || post.likes || (post.engagement && post.engagement.likes) || 0),
+          comments: Array.isArray(post.comments) ? post.comments.length : (this.parseNumber(post.numComments || post.comments || (post.engagement && post.engagement.comments) || (post.engagement && post.engagement.replies) || 0)),
+          shares: this.parseNumber(post.shares || (post.engagement && post.engagement.shares) || (post.engagement && post.engagement.retweets) || 0)
         },
-        created_at: post.created || new Date().toISOString(),
+        created_at: post.created || post.postDate || post.created_at || new Date().toISOString(),
+        comments: this.formatComments(post.comments || []),
+        sentiment: post.sentiment || 'neutral',
+        relevanceScore: post.relevanceScore || 0,
+        insights: post.insights || {},
         metadata: {
           subreddit: post.subreddit || '',
           author: post.author || 'Unknown',
@@ -188,18 +239,22 @@ const dataFormatter = {
   },
 
   formatComments(comments) {
+    if (!Array.isArray(comments)) return [];
+    
     return comments.map(comment => ({
       user: comment.user || comment.username || comment.author || 'Anonymous',
-      text: this.cleanText(comment.text || comment.comment || ''),
-      likes: this.parseNumber(comment.likes || comment.reactions || 0),
-      timestamp: comment.timestamp || comment.created_at || null,
-      replies_count: this.parseNumber(comment.replies_count || comment.replies || 0)
+      text: this.cleanText(comment.text || comment.comment || comment.body || ''),
+      likes: this.parseNumber(comment.likes || comment.reactions || comment.score || 0),
+      timestamp: comment.timestamp || comment.created_at || comment.postDate || null,
+      replies_count: this.parseNumber(comment.replies_count || comment.replies || 0),
+      author: comment.author || comment.user || 'Anonymous',
+      awards: comment.awards || 0
     }));
   },
 
   cleanText(text) {
     if (!text) return '';
-    return text.trim().replace(/\s+/g, ' ').replace(/[\r\n]+/g, ' ');
+    return String(text).trim().replace(/\s+/g, ' ');
   },
 
   parseNumber(value) {
@@ -218,18 +273,20 @@ const dataFormatter = {
   },
 
   extractHashtags(text) {
+    if (!text || typeof text !== 'string') return [];
     const hashtags = text.match(/#[\w]+/g) || [];
     return hashtags.map(tag => tag.toLowerCase());
   },
 
   extractMentions(text) {
+    if (!text || typeof text !== 'string') return [];
     const mentions = text.match(/@[\w]+/g) || [];
     return mentions.map(mention => mention.substring(1));
   },
 
   calculateEngagement(data) {
     const likes = this.parseNumber(data.likes || 0);
-    const comments = (data.comments || []).length;
+    const comments = Array.isArray(data.comments) ? data.comments.length : 0;
     const shares = this.parseNumber(data.shares || 0);
     return {
       total_interactions: likes + comments + shares,
@@ -247,6 +304,8 @@ const dataFormatter = {
   },
 
   extractSentimentData(comments) {
+    if (!Array.isArray(comments)) return { positive: 0, negative: 0, neutral: 0, total: 0 };
+    
     const sentimentKeywords = {
       positive: ['amazing', 'great', 'awesome', 'best', 'love', 'excellent', 'fantastic', 'wonderful', 'perfect', 'good'],
       negative: ['bad', 'worst', 'terrible', 'awful', 'hate', 'poor', 'disappointing', 'waste', 'not worth', 'crowded']
@@ -270,6 +329,8 @@ const dataFormatter = {
   },
 
   calculateOverallSentiment(posts) {
+    if (!Array.isArray(posts)) return { positive: 0, negative: 0, neutral: 0, total: 0, positive_percentage: 0, negative_percentage: 0 };
+    
     let totalPositive = 0;
     let totalNegative = 0;
     let totalNeutral = 0;
@@ -293,13 +354,15 @@ const dataFormatter = {
   },
 
   calculateProfileEngagement(posts) {
+    if (!Array.isArray(posts)) return { total_posts: 0, total_likes: 0, total_comments: 0, total_shares: 0, avg_likes_per_post: 0, avg_comments_per_post: 0 };
+    
     let totalLikes = 0;
     let totalComments = 0;
     let totalShares = 0;
 
     posts.forEach(post => {
       totalLikes += this.parseNumber(post.likes || 0);
-      totalComments += (post.comments || []).length;
+      totalComments += Array.isArray(post.comments) ? post.comments.length : 0;
       totalShares += this.parseNumber(post.shares || 0);
     });
 
@@ -310,6 +373,18 @@ const dataFormatter = {
       total_shares: totalShares,
       avg_likes_per_post: posts.length > 0 ? (totalLikes / posts.length).toFixed(2) : 0,
       avg_comments_per_post: posts.length > 0 ? (totalComments / posts.length).toFixed(2) : 0
+    };
+  },
+
+  formatSocialData(data, platform, url) {
+    return {
+      platform,
+      url,
+      posts: (data.posts || []).map(post => ({
+        ...post,
+        platform
+      })),
+      totalResults: (data.posts || []).length
     };
   }
 };

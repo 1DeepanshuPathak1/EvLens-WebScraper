@@ -18,7 +18,7 @@ class InstagramScraper:
                 time.sleep(3)
                 
                 post_text = self._extract_post_text(page)
-                comments = self._extract_comments(page)
+                all_comments = self._extract_all_comments(page)
                 likes = self._extract_likes(page)
                 timestamp = self._extract_timestamp(page)
                 author = self._extract_author(page)
@@ -27,7 +27,7 @@ class InstagramScraper:
                     'url': url,
                     'post_text': post_text,
                     'author': author,
-                    'comments': comments,
+                    'comments': all_comments,
                     'likes': likes,
                     'shares': 0,
                     'timestamp': timestamp,
@@ -78,7 +78,7 @@ class InstagramScraper:
     
     def _extract_post_text(self, page):
         try:
-            selectors = ['h1', 'article span', '[class*="Caption"]']
+            selectors = ['h1', 'article span', '[class*="Caption"]', '[class*="caption"]']
             for selector in selectors:
                 elements = page.query_selector_all(selector)
                 for el in elements:
@@ -89,30 +89,47 @@ class InstagramScraper:
         except:
             return ''
     
-    def _extract_comments(self, page):
+    def _extract_all_comments(self, page):
         comments = []
         try:
-            page.wait_for_selector('ul li', timeout=5000)
-            comment_elements = page.query_selector_all('ul li')
+            self._scroll_to_load_comments(page)
             
-            for el in comment_elements[:50]:
+            comment_selectors = [
+                'ul li',
+                '[class*="Comment"]',
+                '[role="button"]'
+            ]
+            
+            for selector in comment_selectors:
                 try:
-                    text = el.inner_text().strip()
-                    if text and len(text) > 2:
-                        user_match = re.match(r'^(\S+)\s+(.+)', text)
-                        if user_match:
-                            user = user_match.group(1)
-                            comment_text = user_match.group(2)
-                        else:
-                            user = 'unknown'
-                            comment_text = text
-                        
-                        comments.append({
-                            'user': user,
-                            'text': comment_text,
-                            'likes': 0,
-                            'timestamp': datetime.now().isoformat()
-                        })
+                    page.wait_for_selector(selector, timeout=5000)
+                    comment_elements = page.query_selector_all(selector)
+                    
+                    for el in comment_elements[:200]:
+                        try:
+                            text = el.inner_text().strip()
+                            if text and len(text) > 2:
+                                user_match = re.match(r'^(\S+)\s+(.+)', text)
+                                if user_match:
+                                    user = user_match.group(1)
+                                    comment_text = user_match.group(2)
+                                else:
+                                    user = 'unknown'
+                                    comment_text = text
+                                
+                                if comment_text and len(comment_text) > 2:
+                                    comments.append({
+                                        'user': user,
+                                        'author': user,
+                                        'text': comment_text,
+                                        'likes': 0,
+                                        'timestamp': datetime.now().isoformat()
+                                    })
+                        except:
+                            continue
+                    
+                    if len(comments) > 0:
+                        break
                 except:
                     continue
         except:
@@ -120,9 +137,17 @@ class InstagramScraper:
         
         return comments
     
+    def _scroll_to_load_comments(self, page):
+        try:
+            for _ in range(3):
+                page.evaluate('window.scrollBy(0, 500)')
+                time.sleep(1)
+        except:
+            pass
+    
     def _extract_likes(self, page):
         try:
-            selectors = ['section button span', '[class*="like"]', 'section a']
+            selectors = ['section button span', '[class*="like"]', 'section a', 'button span']
             for selector in selectors:
                 elements = page.query_selector_all(selector)
                 for el in elements:
@@ -147,7 +172,7 @@ class InstagramScraper:
     
     def _extract_author(self, page):
         try:
-            selectors = ['header a', '[class*="Username"]']
+            selectors = ['header a', '[class*="Username"]', 'header h2']
             for selector in selectors:
                 el = page.query_selector(selector)
                 if el:

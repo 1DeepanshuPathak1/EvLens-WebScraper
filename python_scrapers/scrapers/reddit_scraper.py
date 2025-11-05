@@ -20,12 +20,14 @@ class RedditScraper:
                 post = data[0]['data']['children'][0]['data']
                 comments_data = data[1]['data']['children'] if len(data) > 1 else []
                 
+                all_comments = self._parse_comments(comments_data)
+                
                 return {
                     'url': url,
                     'post_text': post.get('title', '') + '\n' + post.get('selftext', ''),
                     'author': post.get('author', 'unknown'),
                     'subreddit': post.get('subreddit', 'unknown'),
-                    'comments': self._parse_comments(comments_data),
+                    'comments': all_comments,
                     'likes': post.get('ups', 0) - post.get('downs', 0),
                     'upvotes': post.get('ups', 0),
                     'downvotes': post.get('downs', 0),
@@ -79,14 +81,16 @@ class RedditScraper:
             for item in items:
                 if item.get('kind') == 't1' and 'data' in item:
                     comment = item['data']
-                    comments.append({
-                        'user': comment.get('author', 'unknown'),
-                        'text': comment.get('body', ''),
-                        'likes': comment.get('ups', 0) - comment.get('downs', 0),
-                        'timestamp': datetime.fromtimestamp(comment.get('created_utc', 0)).isoformat(),
-                        'replies_count': 0,
-                        'awards': comment.get('total_awards_received', 0)
-                    })
+                    if comment.get('body'):
+                        comments.append({
+                            'user': comment.get('author', 'unknown'),
+                            'author': comment.get('author', 'unknown'),
+                            'text': comment.get('body', ''),
+                            'likes': comment.get('ups', 0) - comment.get('downs', 0),
+                            'timestamp': datetime.fromtimestamp(comment.get('created_utc', 0)).isoformat(),
+                            'replies_count': 0,
+                            'awards': comment.get('total_awards_received', 0)
+                        })
                     
                     if 'replies' in comment and isinstance(comment['replies'], dict):
                         if 'data' in comment['replies'] and 'children' in comment['replies']['data']:

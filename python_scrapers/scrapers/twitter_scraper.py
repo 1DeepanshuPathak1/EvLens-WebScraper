@@ -18,7 +18,7 @@ class TwitterScraper:
                 time.sleep(3)
                 
                 post_text = self._extract_post_text(page)
-                comments = self._extract_comments(page)
+                all_comments = self._extract_all_comments(page)
                 likes = self._extract_likes(page)
                 retweets = self._extract_retweets(page)
                 timestamp = self._extract_timestamp(page)
@@ -28,7 +28,7 @@ class TwitterScraper:
                     'url': url,
                     'post_text': post_text,
                     'author': author,
-                    'comments': comments,
+                    'comments': all_comments,
                     'likes': likes,
                     'shares': retweets,
                     'timestamp': timestamp,
@@ -87,30 +87,45 @@ class TwitterScraper:
         except:
             return ''
     
-    def _extract_comments(self, page):
+    def _extract_all_comments(self, page):
         comments = []
         try:
+            self._scroll_to_load_comments(page)
+            
             page.wait_for_selector('[data-testid="reply"]', timeout=5000)
             comment_elements = page.query_selector_all('article')
             
-            for el in comment_elements[:30]:
+            for el in comment_elements[:100]:
                 try:
                     text_el = el.query_selector('[data-testid="tweetText"]')
                     author_el = el.query_selector('[data-testid="User-Name"]')
                     
                     if text_el and author_el:
-                        comments.append({
-                            'user': author_el.inner_text().strip().split('\n')[0],
-                            'text': text_el.inner_text().strip(),
-                            'likes': 0,
-                            'timestamp': datetime.now().isoformat()
-                        })
+                        comment_text = text_el.inner_text().strip()
+                        author = author_el.inner_text().strip().split('\n')[0]
+                        
+                        if comment_text and len(comment_text) > 2:
+                            comments.append({
+                                'user': author,
+                                'author': author,
+                                'text': comment_text,
+                                'likes': 0,
+                                'timestamp': datetime.now().isoformat()
+                            })
                 except:
                     continue
         except:
             pass
         
         return comments
+    
+    def _scroll_to_load_comments(self, page):
+        try:
+            for _ in range(3):
+                page.evaluate('window.scrollBy(0, 500)')
+                time.sleep(1)
+        except:
+            pass
     
     def _extract_likes(self, page):
         try:

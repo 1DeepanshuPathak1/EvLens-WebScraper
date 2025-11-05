@@ -18,7 +18,7 @@ class LinkedInScraper:
                 time.sleep(3)
                 
                 post_text = self._extract_post_text(page)
-                comments = self._extract_comments(page)
+                all_comments = self._extract_all_comments(page)
                 reactions = self._extract_reactions(page)
                 timestamp = self._extract_timestamp(page)
                 author = self._extract_author(page)
@@ -27,7 +27,7 @@ class LinkedInScraper:
                     'url': url,
                     'post_text': post_text,
                     'author': author,
-                    'comments': comments,
+                    'comments': all_comments,
                     'likes': reactions,
                     'shares': 0,
                     'timestamp': timestamp,
@@ -76,7 +76,7 @@ class LinkedInScraper:
     
     def _extract_post_text(self, page):
         try:
-            selectors = ['.feed-shared-text', '[class*="feed-shared-update-v2__description"]']
+            selectors = ['.feed-shared-text', '[class*="feed-shared-update-v2__description"]', '.feed-shared-update-v2__description']
             for selector in selectors:
                 el = page.query_selector(selector)
                 if el:
@@ -85,23 +85,43 @@ class LinkedInScraper:
         except:
             return ''
     
-    def _extract_comments(self, page):
+    def _extract_all_comments(self, page):
         comments = []
         try:
-            comment_elements = page.query_selector_all('.comments-comment-item')
+            self._scroll_to_load_comments(page)
             
-            for el in comment_elements[:30]:
+            comment_selectors = [
+                '.comments-comment-item',
+                '[class*="comment"]',
+                '.comment'
+            ]
+            
+            for selector in comment_selectors:
                 try:
-                    author_el = el.query_selector('.comments-comment-item__commenter-name')
-                    text_el = el.query_selector('.comments-comment-item-content-body')
+                    comment_elements = page.query_selector_all(selector)
                     
-                    if author_el and text_el:
-                        comments.append({
-                            'user': author_el.inner_text().strip(),
-                            'text': text_el.inner_text().strip(),
-                            'likes': 0,
-                            'timestamp': datetime.now().isoformat()
-                        })
+                    for el in comment_elements[:100]:
+                        try:
+                            author_el = el.query_selector('.comments-comment-item__commenter-name, [class*="commenter-name"]')
+                            text_el = el.query_selector('.comments-comment-item-content-body, [class*="comment-body"]')
+                            
+                            if text_el:
+                                comment_text = text_el.inner_text().strip()
+                                author = author_el.inner_text().strip() if author_el else 'unknown'
+                                
+                                if comment_text and len(comment_text) > 2:
+                                    comments.append({
+                                        'user': author,
+                                        'author': author,
+                                        'text': comment_text,
+                                        'likes': 0,
+                                        'timestamp': datetime.now().isoformat()
+                                    })
+                        except:
+                            continue
+                    
+                    if len(comments) > 0:
+                        break
                 except:
                     continue
         except:
@@ -109,9 +129,17 @@ class LinkedInScraper:
         
         return comments
     
+    def _scroll_to_load_comments(self, page):
+        try:
+            for _ in range(3):
+                page.evaluate('window.scrollBy(0, 500)')
+                time.sleep(1)
+        except:
+            pass
+    
     def _extract_reactions(self, page):
         try:
-            selectors = ['.social-details-social-counts__reactions-count', '[aria-label*="reaction"]']
+            selectors = ['.social-details-social-counts__reactions-count', '[aria-label*="reaction"]', '[class*="reaction"]']
             for selector in selectors:
                 el = page.query_selector(selector)
                 if el:
@@ -136,9 +164,11 @@ class LinkedInScraper:
     
     def _extract_author(self, page):
         try:
-            el = page.query_selector('.feed-shared-actor__name')
-            if el:
-                return el.inner_text().strip()
+            selectors = ['.feed-shared-actor__name', '[class*="actor-name"]']
+            for selector in selectors:
+                el = page.query_selector(selector)
+                if el:
+                    return el.inner_text().strip()
             return 'unknown'
         except:
             return 'unknown'
