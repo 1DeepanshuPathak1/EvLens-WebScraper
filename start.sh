@@ -17,6 +17,7 @@ RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     HEALTH_CHECK=$(curl -s -X GET http://localhost:5000/health 2>/dev/null)
+    echo "Health check response: $HEALTH_CHECK"
     if echo "$HEALTH_CHECK" | grep -q "OK"; then
         echo "✓ Python service is ready and healthy"
         break
