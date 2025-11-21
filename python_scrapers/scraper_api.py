@@ -1,3 +1,28 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import logging
+from scrapers.instagram_scraper import InstagramScraper
+from scrapers.twitter_scraper import TwitterScraper
+from scrapers.linkedin_scraper import LinkedInScraper
+from scrapers.reddit_scraper import RedditScraper
+
+app = Flask(__name__)
+CORS(app)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+scrapers = {
+    'instagram': InstagramScraper(),
+    'twitter': TwitterScraper(),
+    'linkedin': LinkedInScraper(),
+    'reddit': RedditScraper()
+}
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'OK', 'service': 'Python Scraper API'})
+
 @app.route('/scrape', methods=['POST'])
 def scrape():
     try:
@@ -41,7 +66,6 @@ def scrape_profile():
         logger.info(f'Scraping {platform} profile: {url}')
         
         scraper = scrapers[platform]
-        # Pass event_name to scrape_profile if the method supports it
         if platform == 'instagram':
              result = scraper.scrape_profile(url, event_name=event_name)
         else:
