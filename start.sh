@@ -9,26 +9,27 @@ cd ..
 
 echo "Python service started with PID: $PYTHON_PID"
 
-sleep 5
+echo "Waiting for Python service to initialize..."
+sleep 10
 
-MAX_RETRIES=10
+MAX_RETRIES=15
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     if curl -s http://localhost:5000/health > /dev/null 2>&1; then
-        echo "Python service is ready"
+        echo "✓ Python service is ready and healthy"
         break
     fi
     echo "Waiting for Python service to be ready... ($RETRY_COUNT/$MAX_RETRIES)"
-    sleep 2
+    sleep 3
     RETRY_COUNT=$((RETRY_COUNT + 1))
 done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo "Python service failed to start"
-    kill $PYTHON_PID
+    echo "✗ Python service failed to start after $MAX_RETRIES attempts"
+    kill $PYTHON_PID 2>/dev/null || true
     exit 1
 fi
 
 echo "Starting Node.js service..."
-node src/server.js
+exec node src/server.js
