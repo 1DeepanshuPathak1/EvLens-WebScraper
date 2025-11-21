@@ -6,9 +6,9 @@ const scraperController = {
     try {
       const { url, eventName } = req.body;
       logger.info(`Scraping URL: ${url}`);
-      
+
       const result = await scraperService.scrapeUrl(url, eventName);
-      
+
       res.json({
         success: true,
         data: result,
@@ -24,9 +24,9 @@ const scraperController = {
     try {
       const { urls, eventName } = req.body;
       logger.info(`Scraping multiple URLs: ${urls.length} URLs`);
-      
+
       const results = await scraperService.scrapeMultipleUrls(urls, eventName);
-      
+
       res.json({
         success: true,
         data: results,
@@ -43,9 +43,9 @@ const scraperController = {
     try {
       const { profileUrl, platform, eventName } = req.body;
       logger.info(`Scraping profile: ${profileUrl} on ${platform}`);
-      
+
       const result = await scraperService.scrapeProfile(profileUrl, platform, eventName);
-      
+
       res.json({
         success: true,
         data: result,
@@ -61,9 +61,13 @@ const scraperController = {
     try {
       const { eventName, eventDate, platforms, socialLinks, output } = req.body;
       logger.info(`Scraping event: ${eventName} from platforms: ${platforms.join(', ')}`);
-      
+
       const result = await scraperService.scrapeEvent(eventName, eventDate, platforms, socialLinks, output);
-      
+
+      if (output && output.toLowerCase() === 'excel' && result.filepath) {
+        return res.download(result.filepath, result.filename);
+      }
+
       res.json({
         success: true,
         data: result,

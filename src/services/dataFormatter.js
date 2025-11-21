@@ -7,7 +7,7 @@ const dataFormatter = {
   async convertToExcel(data) {
     try {
       const flattenedData = this.flattenDataForExcel(data);
-      
+
       if (flattenedData.length === 0) {
         logger.warn('No data to export to Excel');
         return {
@@ -17,7 +17,7 @@ const dataFormatter = {
           filepath: null
         };
       }
-      
+
       const fields = [
         'eventName',
         'eventDate',
@@ -74,30 +74,48 @@ const dataFormatter = {
 
   flattenDataForExcel(data) {
     const flattened = [];
-    
+
     if (!data.results || !Array.isArray(data.results)) {
       return flattened;
     }
-    
+
     data.results.forEach(result => {
       if (result && Array.isArray(result.posts)) {
         result.posts.forEach(post => {
           if (post && typeof post === 'object') {
+            // Calculate engagement metrics correctly for Instagram and other platforms
+            const likes = this.parseNumber(post.likes || (post.engagement && post.engagement.likes) || 0);
+
+            // For comments count: use explicit count if available, otherwise array length, otherwise engagement object
+            let commentsCount = 0;
+            if (post.comment_count !== undefined) {
+              commentsCount = post.comment_count;
+            } else if (Array.isArray(post.comments)) {
+              commentsCount = post.comments.length;
+            } else if (post.engagement && (post.engagement.comments || post.engagement.replies)) {
+              commentsCount = this.parseNumber(post.engagement.comments || post.engagement.replies);
+            }
+
+            const shares = this.parseNumber(post.shares || (post.engagement && post.engagement.shares) || (post.engagement && post.engagement.retweets) || 0);
+
+            // For engagement score: use video views if available (common for reels), otherwise calculate
+            const engagementScore = post.video_views || (likes + (commentsCount * 2) + (shares * 3));
+
             const postData = {
               eventName: data.eventName || 'Unknown Event',
               eventDate: data.eventDate || new Date().toISOString().split('T')[0],
               platform: result.platform || 'unknown',
-              postType: post.type || 'post',
-              postContent: this.cleanText(post.text || post.title || ''),
+              postType: post.post_type || post.type || 'post',
+              postContent: this.cleanText(post.post_text || post.text || post.title || ''),
               postUrl: post.url || '',
               postAuthor: post.author || (post.metadata && post.metadata.author) || 'Unknown',
-              postLikes: this.parseNumber(post.engagement && post.engagement.likes) || 0,
-              postComments: Array.isArray(post.comments) ? post.comments.length : 0,
-              postShares: this.parseNumber((post.engagement && post.engagement.shares) || (post.engagement && post.engagement.retweets)) || 0,
+              postLikes: likes,
+              postComments: commentsCount,
+              postShares: shares,
               postSentiment: post.sentiment || 'neutral',
-              postDate: post.created || post.postDate || post.created_at || new Date().toISOString(),
-              postEngagement: this.calculatePostEngagement(post),
-              relevanceScore: post.relevanceScore || 0,
+              postDate: post.timestamp || post.created || post.postDate || post.created_at || new Date().toISOString(),
+              postEngagement: engagementScore,
+              relevanceScore: post.relevanceScore || post.engagement_rate || 0,
               issues: post.insights && post.insights.issues ? post.insights.issues.join('; ') : '',
               praise: post.insights && post.insights.praise ? post.insights.praise.join('; ') : '',
               aspects: post.insights && post.insights.aspects ? post.insights.aspects.join('; ') : ''
@@ -131,12 +149,21 @@ const dataFormatter = {
   },
 
   calculatePostEngagement(post) {
-    if (!post || !post.engagement) return 0;
-    
-    const likes = this.parseNumber(post.engagement.likes) || 0;
-    const comments = Array.isArray(post.comments) ? post.comments.length : (this.parseNumber(post.engagement.comments || post.engagement.replies) || 0);
-    const shares = this.parseNumber(post.engagement.shares || post.engagement.retweets) || 0;
-    
+    if (!post) return 0;
+
+    const likes = this.parseNumber(post.likes || (post.engagement && post.engagement.likes) || 0);
+
+    let comments = 0;
+    if (post.comment_count !== undefined) {
+      comments = post.comment_count;
+    } else if (Array.isArray(post.comments)) {
+      comments = post.comments.length;
+    } else if (post.engagement && (post.engagement.comments || post.engagement.replies)) {
+      comments = this.parseNumber(post.engagement.comments || post.engagement.replies);
+    }
+
+    const shares = this.parseNumber(post.shares || (post.engagement && post.engagement.shares) || (post.engagement && post.engagement.retweets) || 0);
+
     return likes + (comments * 2) + (shares * 3);
   },
 
@@ -240,7 +267,7 @@ const dataFormatter = {
 
   formatComments(comments) {
     if (!Array.isArray(comments)) return [];
-    
+
     return comments.map(comment => ({
       user: comment.user || comment.username || comment.author || 'Anonymous',
       text: this.cleanText(comment.text || comment.comment || comment.body || ''),
@@ -305,7 +332,7 @@ const dataFormatter = {
 
   extractSentimentData(comments) {
     if (!Array.isArray(comments)) return { positive: 0, negative: 0, neutral: 0, total: 0 };
-    
+
     const sentimentKeywords = {
       positive: ['amazing', 'great', 'awesome', 'best', 'love', 'excellent', 'fantastic', 'wonderful', 'perfect', 'good'],
       negative: ['bad', 'worst', 'terrible', 'awful', 'hate', 'poor', 'disappointing', 'waste', 'not worth', 'crowded']
@@ -330,7 +357,7 @@ const dataFormatter = {
 
   calculateOverallSentiment(posts) {
     if (!Array.isArray(posts)) return { positive: 0, negative: 0, neutral: 0, total: 0, positive_percentage: 0, negative_percentage: 0 };
-    
+
     let totalPositive = 0;
     let totalNegative = 0;
     let totalNeutral = 0;
@@ -343,49 +370,48 @@ const dataFormatter = {
     });
 
     const total = totalPositive + totalNegative + totalNeutral;
+    if (total === 0) return { positive: 0, negative: 0, neutral: 0, total: 0, positive_percentage: 0, negative_percentage: 0 };
+
     return {
       positive: totalPositive,
       negative: totalNegative,
       neutral: totalNeutral,
       total,
-      positive_percentage: total > 0 ? ((totalPositive / total) * 100).toFixed(2) : 0,
-      negative_percentage: total > 0 ? ((totalNegative / total) * 100).toFixed(2) : 0
+      positive_percentage: ((totalPositive / total) * 100).toFixed(2),
+      negative_percentage: ((totalNegative / total) * 100).toFixed(2)
     };
   },
 
   calculateProfileEngagement(posts) {
-    if (!Array.isArray(posts)) return { total_posts: 0, total_likes: 0, total_comments: 0, total_shares: 0, avg_likes_per_post: 0, avg_comments_per_post: 0 };
-    
+    if (!Array.isArray(posts) || posts.length === 0) return { average_likes: 0, average_comments: 0, average_engagement_rate: 0 };
+
     let totalLikes = 0;
     let totalComments = 0;
-    let totalShares = 0;
+    let totalEngagementRate = 0;
+    let postsWithEngagement = 0;
 
     posts.forEach(post => {
-      totalLikes += this.parseNumber(post.likes || 0);
-      totalComments += Array.isArray(post.comments) ? post.comments.length : 0;
-      totalShares += this.parseNumber(post.shares || 0);
+      const likes = this.parseNumber(post.likes || 0);
+      const comments = Array.isArray(post.comments) ? post.comments.length : 0;
+      totalLikes += likes;
+      totalComments += comments;
+
+      if (post.engagement && post.engagement.engagement_rate) {
+        totalEngagementRate += parseFloat(post.engagement.engagement_rate);
+        postsWithEngagement++;
+      }
     });
 
     return {
-      total_posts: posts.length,
-      total_likes: totalLikes,
-      total_comments: totalComments,
-      total_shares: totalShares,
-      avg_likes_per_post: posts.length > 0 ? (totalLikes / posts.length).toFixed(2) : 0,
-      avg_comments_per_post: posts.length > 0 ? (totalComments / posts.length).toFixed(2) : 0
+      average_likes: Math.round(totalLikes / posts.length),
+      average_comments: Math.round(totalComments / posts.length),
+      average_engagement_rate: postsWithEngagement > 0 ? (totalEngagementRate / postsWithEngagement).toFixed(2) : 0
     };
   },
 
-  formatSocialData(data, platform, url) {
-    return {
-      platform,
-      url,
-      posts: (data.posts || []).map(post => ({
-        ...post,
-        platform
-      })),
-      totalResults: (data.posts || []).length
-    };
+  // Alias for formatProfile to match scraperService call
+  formatSocialData(rawData, platform, url) {
+    return this.formatProfile(rawData, url, platform, 'Unknown Event');
   }
 };
 

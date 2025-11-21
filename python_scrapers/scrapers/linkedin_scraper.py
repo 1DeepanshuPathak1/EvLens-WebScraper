@@ -204,7 +204,48 @@ class LinkedInScraper:
             return list(set(urls))
         except:
             return []
-    
+
+    def search_posts(self, query, limit=10):
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(user_agent=self.user_agent)
+            page = context.new_page()
+            
+            try:
+                url = f'https://www.linkedin.com/search/results/content/?keywords={query}'
+                page.goto(url, wait_until='networkidle', timeout=30000)
+                time.sleep(3)
+                
+                post_urls = []
+                try:
+                    links = page.query_selector_all('a[href*="/posts/"]')
+                    for link in links:
+                        href = link.get_attribute('href')
+                        if href:
+                            full_url = f'https://www.linkedin.com{href}'
+                            post_urls.append(full_url)
+                except:
+                    pass
+                
+                posts = []
+                for post_url in list(set(post_urls))[:limit]:
+                    post_data = self.scrape_post(post_url)
+                    if 'error' not in post_data:
+                        posts.append(post_data)
+                
+                return {
+                    'platform': 'linkedin',
+                    'query': query,
+                    'posts': posts,
+                    'total_results': len(posts)
+                }
+            
+            except Exception as e:
+                return {'error': f'LinkedIn search failed: {str(e)}'}
+            
+            finally:
+                browser.close()
+
     def _parse_number(self, text):
         multipliers = {'K': 1000, 'M': 1000000, 'B': 1000000000}
         match = re.search(r'([\d.]+)([KMB])?', text, re.IGNORECASE)

@@ -1,257 +1,340 @@
-from playwright.sync_api import sync_playwright
-import re
-import time
+import instaloader
 from datetime import datetime
+import time
+import re
+import requests
+from bs4 import BeautifulSoup
+import os
+import json
 
 class InstagramScraper:
     def __init__(self):
-        self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        self.loader = instaloader.Instaloader(
+            download_pictures=False,
+            download_videos=False,
+            download_video_thumbnails=False,
+            download_geotags=False,
+            download_comments=False,  # Disable to avoid login requirement
+            save_metadata=False,
+            compress_json=False,
+            post_metadata_txt_pattern='',
+            max_connection_attempts=3,
+            quiet=True
+        )
+        
+        print("Instagram scraper initialized (no login required)")
     
     def scrape_post(self, url):
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=self.user_agent)
-            page = context.new_page()
-            
-            try:
-                page.goto(url, wait_until='networkidle', timeout=30000)
-                time.sleep(3)
-                
-                post_text = self._extract_post_text(page)
-                all_comments = self._extract_all_comments(page)
-                likes = self._extract_likes(page)
-                timestamp = self._extract_timestamp(page)
-                author = self._extract_author(page)
-                
-                return {
-                    'url': url,
-                    'post_text': post_text,
-                    'author': author,
-                    'comments': all_comments,
-                    'likes': likes,
-                    'shares': 0,
-                    'timestamp': timestamp,
-                    'post_type': self._detect_post_type(url)
-                }
-            
-            except Exception as e:
-                return {'error': f'Instagram scraping failed: {str(e)}'}
-            
-            finally:
-                browser.close()
-    
-    def scrape_profile(self, url):
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=self.user_agent)
-            page = context.new_page()
-            
-            try:
-                page.goto(url, wait_until='networkidle', timeout=30000)
-                time.sleep(3)
-                
-                username = self._extract_username(page)
-                followers = self._extract_followers(page)
-                following = self._extract_following(page)
-                posts_count = self._extract_posts_count(page)
-                post_urls = self._extract_post_urls(page)
-                
-                posts = []
-                for post_url in post_urls[:10]:
-                    post_data = self.scrape_post(post_url)
-                    if 'error' not in post_data:
-                        posts.append(post_data)
-                
-                return {
-                    'username': username,
-                    'followers': followers,
-                    'following': following,
-                    'posts_count': posts_count,
-                    'posts': posts
-                }
-            
-            except Exception as e:
-                return {'error': f'Instagram profile scraping failed: {str(e)}'}
-            
-            finally:
-                browser.close()
-    
-    def _extract_post_text(self, page):
+        """Scrape a single Instagram post by URL using public data"""
         try:
-            selectors = ['h1', 'article span', '[class*="Caption"]', '[class*="caption"]']
-            for selector in selectors:
-                elements = page.query_selector_all(selector)
-                for el in elements:
-                    text = el.inner_text().strip()
-                    if text and len(text) > 10:
-                        return text
-            return ''
-        except:
-            return ''
+            shortcode = self._extract_shortcode(url)
+            if not shortcode:
+                return {'error': 'Invalid Instagram URL'}
+            
+            # Get post using Instaloader (works without login for public posts)
+            post = instaloader.Post.from_shortcode(self.loader.context, shortcode)
+            
+            # Extract basic post data (available without login)
+            post_type = 'reel' if post.is_video else 'post'
+            
+            # Get comments count and likes (these are available publicly)
+            likes = post.likes if hasattr(post, 'likes') else 0
+            comment_count = post.comments if hasattr(post, 'comments') else 0
+            video_views = post.video_view_count if (post.is_video and hasattr(post, 'video_view_count')) else 0
+            
+            # Try to get comments using alternative method
+            comments = self._extract_comments_alternative(shortcode, limit=50)
+            
+            return {
+                'url': url,
+                'post_text': post.caption if post.caption else '',
+                'author': post.owner_username,
+                'comments': comments,
+                'likes': likes,
+                'shares': 0,
+                'timestamp': post.date_utc.isoformat(),
+                'post_type': post_type,
+                'video_views': video_views,
+                'comment_count': comment_count,
+                'engagement_rate': self._calculate_engagement_simple(likes, comment_count, video_views)
+            }
+        except Exception as e:
+            print(f"Error scraping post: {str(e)}")
+            return {'error': f'Instagram post scraping failed: {str(e)}'}
     
-    def _extract_all_comments(self, page):
+    def _extract_comments_alternative(self, shortcode, limit=50):
+        """Extract comments using Instagram's public GraphQL API"""
         comments = []
         try:
-            self._scroll_to_load_comments(page)
+            # Instagram's public post URL
+            url = f'https://www.instagram.com/p/{shortcode}/?__a=1&__d=dis'
             
-            comment_selectors = [
-                'ul li',
-                '[class*="Comment"]',
-                '[role="button"]'
-            ]
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
             
-            for selector in comment_selectors:
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
                 try:
-                    page.wait_for_selector(selector, timeout=5000)
-                    comment_elements = page.query_selector_all(selector)
+                    data = response.json()
                     
-                    for el in comment_elements[:200]:
-                        try:
-                            text = el.inner_text().strip()
-                            if text and len(text) > 2:
-                                user_match = re.match(r'^(\S+)\s+(.+)', text)
-                                if user_match:
-                                    user = user_match.group(1)
-                                    comment_text = user_match.group(2)
-                                else:
-                                    user = 'unknown'
-                                    comment_text = text
-                                
-                                if comment_text and len(comment_text) > 2:
-                                    comments.append({
-                                        'user': user,
-                                        'author': user,
-                                        'text': comment_text,
-                                        'likes': 0,
-                                        'timestamp': datetime.now().isoformat()
-                                    })
-                        except:
-                            continue
-                    
-                    if len(comments) > 0:
-                        break
-                except:
-                    continue
-        except:
-            pass
+                    # Navigate through the JSON structure to find comments
+                    if 'graphql' in data or 'items' in data:
+                        # Try different JSON structures Instagram uses
+                        post_data = None
+                        
+                        if 'graphql' in data and 'shortcode_media' in data['graphql']:
+                            post_data = data['graphql']['shortcode_media']
+                        elif 'items' in data and len(data['items']) > 0:
+                            post_data = data['items'][0]
+                        
+                        if post_data and 'edge_media_to_parent_comment' in post_data:
+                            edges = post_data['edge_media_to_parent_comment']['edges']
+                            
+                            for edge in edges[:limit]:
+                                node = edge['node']
+                                comments.append({
+                                    'user': node.get('owner', {}).get('username', 'unknown'),
+                                    'author': node.get('owner', {}).get('username', 'unknown'),
+                                    'text': node.get('text', ''),
+                                    'likes': node.get('edge_liked_by', {}).get('count', 0),
+                                    'timestamp': datetime.fromtimestamp(node.get('created_at', 0)).isoformat()
+                                })
+                        
+                        print(f"Extracted {len(comments)} comments via API")
+                except json.JSONDecodeError:
+                    print("Could not parse Instagram API response")
+        except Exception as e:
+            print(f"Alternative comment extraction failed: {str(e)}")
+        
+        # If API method failed, create placeholder comments to show structure
+        if len(comments) == 0:
+            print("Using public data only (comments require Instagram login)")
+            # Return empty list - comments require authentication
         
         return comments
     
-    def _scroll_to_load_comments(self, page):
+    def scrape_profile(self, url, event_name=None):
+        """Scrape posts from an Instagram profile"""
         try:
-            for _ in range(3):
-                page.evaluate('window.scrollBy(0, 500)')
+            username = self._extract_username_from_url(url)
+            if not username:
+                return {'error': 'Invalid Instagram profile URL'}
+            
+            profile = instaloader.Profile.from_username(self.loader.context, username)
+            
+            posts = []
+            post_count = 0
+            limit = 20
+            
+            print(f"Scraping profile: {username} (up to {limit} posts)")
+            
+            for post in profile.get_posts():
+                if post_count >= limit:
+                    break
+                
+                try:
+                    post_type = 'reel' if post.is_video else 'post'
+                    
+                    likes = post.likes if hasattr(post, 'likes') else 0
+                    comment_count = post.comments if hasattr(post, 'comments') else 0
+                    video_views = post.video_view_count if (post.is_video and hasattr(post, 'video_view_count')) else 0
+                    
+                    # Try to get comments for this post
+                    comments = self._extract_comments_alternative(post.shortcode, limit=20)
+                    
+                    post_data = {
+                        'url': f'https://www.instagram.com/p/{post.shortcode}/',
+                        'post_text': post.caption if post.caption else '',
+                        'author': post.owner_username,
+                        'comments': comments,
+                        'likes': likes,
+                        'shares': 0,
+                        'timestamp': post.date_utc.isoformat(),
+                        'post_type': post_type,
+                        'video_views': video_views,
+                        'comment_count': comment_count,
+                        'engagement_rate': self._calculate_engagement_simple(likes, comment_count, video_views)
+                    }
+                    
+                    posts.append(post_data)
+                    post_count += 1
+                    print(f"  ✓ Scraped post {post_count}/{limit}: {likes} likes, {comment_count} comments")
+                    
+                    time.sleep(1)  # Rate limiting
+                
+                except Exception as e:
+                    print(f"Error processing post: {str(e)}")
+                    continue
+            
+            return {
+                'username': profile.username,
+                'followers': profile.followers,
+                'following': profile.followees,
+                'posts_count': profile.mediacount,
+                'posts': posts,
+                'platform': 'instagram',
+                'biography': profile.biography if hasattr(profile, 'biography') else '',
+                'is_verified': profile.is_verified if hasattr(profile, 'is_verified') else False,
+                'is_private': profile.is_private
+            }
+        except Exception as e:
+            print(f"Profile scraping error: {str(e)}")
+            return {'error': f'Instagram profile scraping failed: {str(e)}'}
+    
+    def search_posts(self, query, limit=10):
+        """Search for posts by event name using Google search"""
+        if 'instagram.com/' in query and '/p/' not in query and '/reel/' not in query:
+            return self.scrape_profile(query)
+        
+        if '/p/' in query or '/reel/' in query:
+            post_data = self.scrape_post(query)
+            if 'error' not in post_data:
+                return {
+                    'platform': 'instagram',
+                    'query': query,
+                    'posts': [post_data],
+                    'total_results': 1
+                }
+            return post_data
+        
+        print(f"Searching Google for Instagram posts about: {query}")
+        instagram_urls = self._google_search_instagram(query, limit)
+        
+        if not instagram_urls:
+            print(f"No Instagram URLs found for query: {query}")
+            return {
+                'platform': 'instagram',
+                'query': query,
+                'posts': [],
+                'total_results': 0
+            }
+        
+        posts = []
+        for url in instagram_urls:
+            try:
+                post_data = self.scrape_post(url)
+                if 'error' not in post_data:
+                    posts.append(post_data)
+                    print(f"Successfully scraped: {url}")
+                else:
+                    print(f"Failed to scrape: {url} - {post_data.get('error')}")
                 time.sleep(1)
-        except:
-            pass
+            except Exception as e:
+                print(f"Error scraping {url}: {str(e)}")
+                continue
+        
+        return {
+            'platform': 'instagram',
+            'query': query,
+            'posts': posts,
+            'total_results': len(posts)
+        }
     
-    def _extract_likes(self, page):
-        try:
-            selectors = ['section button span', '[class*="like"]', 'section a', 'button span']
-            for selector in selectors:
-                elements = page.query_selector_all(selector)
-                for el in elements:
-                    text = el.inner_text().strip()
-                    match = re.search(r'([\d,]+)\s*like', text, re.IGNORECASE)
-                    if match:
-                        return int(match.group(1).replace(',', ''))
-            return 0
-        except:
-            return 0
+    def _google_search_instagram(self, event_name, limit=10):
+        """Search Google for Instagram posts/reels related to the event"""
+        instagram_urls = []
+        
+        search_queries = [
+            f'{event_name} instagram reel',
+            f'{event_name} instagram post',
+            f'{event_name} site:instagram.com/reel',
+            f'{event_name} site:instagram.com/p'
+        ]
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive'
+        }
+        
+        for search_query in search_queries:
+            if len(instagram_urls) >= limit:
+                break
+            
+            try:
+                print(f"Searching Google for: {search_query}")
+                
+                google_url = f"https://www.google.com/search?q={requests.utils.quote(search_query)}&num=20"
+                
+                response = requests.get(google_url, headers=headers, timeout=15)
+                response.raise_for_status()
+                
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                for link in soup.find_all('a', href=True):
+                    href = link['href']
+                    
+                    if 'instagram.com' in href:
+                        instagram_url = None
+                        
+                        if href.startswith('https://www.instagram.com') or href.startswith('http://www.instagram.com'):
+                            instagram_url = href
+                        elif '/url?q=' in href:
+                            match = re.search(r'/url\?q=([^&]+)', href)
+                            if match:
+                                decoded_url = requests.utils.unquote(match.group(1))
+                                if 'instagram.com' in decoded_url:
+                                    instagram_url = decoded_url
+                        else:
+                            match = re.search(r'(https?://(?:www\.)?instagram\.com/(?:p|reel)/[A-Za-z0-9_-]+)', href)
+                            if match:
+                                instagram_url = match.group(1)
+                        
+                        if instagram_url:
+                            if '/p/' in instagram_url or '/reel/' in instagram_url:
+                                clean_url = instagram_url.split('?')[0].split('#')[0]
+                                
+                                if re.match(r'https?://(?:www\.)?instagram\.com/(?:p|reel)/[A-Za-z0-9_-]+/?$', clean_url):
+                                    if clean_url not in instagram_urls:
+                                        instagram_urls.append(clean_url)
+                                        print(f"✓ Found Instagram URL: {clean_url}")
+                                        
+                                        if len(instagram_urls) >= limit:
+                                            break
+                
+                if len(instagram_urls) < limit:
+                    time.sleep(3)
+                
+            except Exception as e:
+                print(f"Error during Google search for '{search_query}': {str(e)}")
+                continue
+        
+        print(f"\nFinal count: {len(instagram_urls)} Instagram URLs found")
+        return instagram_urls[:limit]
     
-    def _extract_timestamp(self, page):
-        try:
-            time_el = page.query_selector('time')
-            if time_el:
-                datetime_attr = time_el.get_attribute('datetime')
-                if datetime_attr:
-                    return datetime_attr
-            return datetime.now().isoformat()
-        except:
-            return datetime.now().isoformat()
+    def _extract_shortcode(self, url):
+        """Extract shortcode from Instagram post URL"""
+        patterns = [
+            r'instagram\.com/p/([A-Za-z0-9_-]+)',
+            r'instagram\.com/reel/([A-Za-z0-9_-]+)',
+            r'instagram\.com/tv/([A-Za-z0-9_-]+)'
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return None
     
-    def _extract_author(self, page):
-        try:
-            selectors = ['header a', '[class*="Username"]', 'header h2']
-            for selector in selectors:
-                el = page.query_selector(selector)
-                if el:
-                    return el.inner_text().strip()
-            return 'unknown'
-        except:
-            return 'unknown'
-    
-    def _extract_username(self, page):
-        try:
-            el = page.query_selector('header h2, header h1')
-            if el:
-                return el.inner_text().strip()
-            return 'unknown'
-        except:
-            return 'unknown'
-    
-    def _extract_followers(self, page):
-        try:
-            el = page.query_selector('a[href*="followers"] span')
-            if el:
-                text = el.inner_text().strip()
-                return self._parse_number(text)
-            return 0
-        except:
-            return 0
-    
-    def _extract_following(self, page):
-        try:
-            el = page.query_selector('a[href*="following"] span')
-            if el:
-                text = el.inner_text().strip()
-                return self._parse_number(text)
-            return 0
-        except:
-            return 0
-    
-    def _extract_posts_count(self, page):
-        try:
-            elements = page.query_selector_all('header span, header li')
-            for el in elements:
-                text = el.inner_text().strip()
-                if 'post' in text.lower():
-                    match = re.search(r'([\d,]+)', text)
-                    if match:
-                        return int(match.group(1).replace(',', ''))
-            return 0
-        except:
-            return 0
-    
-    def _extract_post_urls(self, page):
-        urls = []
-        try:
-            links = page.query_selector_all('article a')
-            for link in links[:20]:
-                href = link.get_attribute('href')
-                if href and '/p/' in href:
-                    full_url = f'https://www.instagram.com{href}' if not href.startswith('http') else href
-                    urls.append(full_url)
-            return list(set(urls))
-        except:
-            return []
-    
-    def _detect_post_type(self, url):
-        if '/reel/' in url:
-            return 'reel'
-        elif '/p/' in url:
-            return 'post'
-        elif '/tv/' in url:
-            return 'video'
-        return 'post'
-    
-    def _parse_number(self, text):
-        multipliers = {'K': 1000, 'M': 1000000, 'B': 1000000000}
-        match = re.search(r'([\d.]+)([KMB])?', text, re.IGNORECASE)
+    def _extract_username_from_url(self, url):
+        """Extract username from Instagram profile URL"""
+        url = url.rstrip('/').split('?')[0]
+        pattern = r'instagram\.com/([A-Za-z0-9._]+)/?$'
+        match = re.search(pattern, url)
         if match:
-            num = float(match.group(1))
-            mult = match.group(2)
-            if mult:
-                num *= multipliers.get(mult.upper(), 1)
-            return int(num)
-        return 0
+            return match.group(1)
+        return None
+    
+    def _calculate_engagement_simple(self, likes, comments, views):
+        """Calculate engagement rate"""
+        try:
+            total_engagement = likes + comments
+            if views > 0:
+                return round((total_engagement / views) * 100, 2)
+            return 0
+        except:
+            return 0

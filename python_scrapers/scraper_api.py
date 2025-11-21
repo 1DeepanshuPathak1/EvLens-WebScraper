@@ -66,7 +66,12 @@ def scrape_profile():
         logger.info(f'Scraping {platform} profile: {url}')
         
         scraper = scrapers[platform]
-        result = scraper.scrape_profile(url)
+        # Pass event_name to scrape_profile if the method supports it
+        if platform == 'instagram':
+             result = scraper.scrape_profile(url, event_name=event_name)
+        else:
+             result = scraper.scrape_profile(url)
+        
         result['event_name'] = event_name
         
         return jsonify(result)

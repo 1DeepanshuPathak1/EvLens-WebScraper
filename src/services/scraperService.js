@@ -16,14 +16,14 @@ const blogScraper = require('./scrapers/blogScraper');
 const scraperService = {
   calculateTotalEngagement(results) {
     if (!Array.isArray(results)) return 0;
-    
+
     return results.reduce((total, result) => {
       const posts = result.posts || [];
       return total + posts.reduce((postTotal, post) => {
         const engagement = post.engagement || {};
         return postTotal + (
-          (engagement.likes || 0) + 
-          ((engagement.comments || engagement.replies || 0) * 2) + 
+          (engagement.likes || 0) +
+          ((engagement.comments || engagement.replies || 0) * 2) +
           ((engagement.shares || engagement.retweets || 0) * 3)
         );
       }, 0);
@@ -32,7 +32,7 @@ const scraperService = {
 
   summarizePlatformResults(results) {
     if (!Array.isArray(results)) return {};
-    
+
     return results.reduce((summary, result) => {
       const platform = result.platform;
       if (!summary[platform]) {
@@ -49,25 +49,25 @@ const scraperService = {
 
       const posts = result.posts || [];
       summary[platform].totalPosts += posts.length;
-      
+
       let totalRelevance = 0;
-      
+
       posts.forEach(post => {
         const engagement = post.engagement || {};
         summary[platform].totalEngagement += (
-          (engagement.likes || 0) + 
-          ((engagement.comments || engagement.replies || 0) * 2) + 
+          (engagement.likes || 0) +
+          ((engagement.comments || engagement.replies || 0) * 2) +
           ((engagement.shares || engagement.retweets || 0) * 3)
         );
 
         const type = post.type || 'unknown';
         summary[platform].postTypes[type] = (summary[platform].postTypes[type] || 0) + 1;
-        
+
         if (post.sentiment) {
-          summary[platform].sentimentBreakdown[post.sentiment] = 
+          summary[platform].sentimentBreakdown[post.sentiment] =
             (summary[platform].sentimentBreakdown[post.sentiment] || 0) + 1;
         }
-        
+
         if (post.insights) {
           post.insights.issues?.forEach(issue => {
             const existing = summary[platform].topIssues.find(i => i.issue === issue);
@@ -77,7 +77,7 @@ const scraperService = {
               summary[platform].topIssues.push({ issue, count: 1 });
             }
           });
-          
+
           post.insights.praise?.forEach(praise => {
             const existing = summary[platform].topPraise.find(p => p.praise === praise);
             if (existing) {
@@ -87,16 +87,16 @@ const scraperService = {
             }
           });
         }
-        
+
         if (post.relevanceScore) {
           totalRelevance += post.relevanceScore;
         }
       });
-      
-      summary[platform].avgRelevanceScore = posts.length > 0 
-        ? (totalRelevance / posts.length).toFixed(2) 
+
+      summary[platform].avgRelevanceScore = posts.length > 0
+        ? (totalRelevance / posts.length).toFixed(2)
         : 0;
-      
+
       summary[platform].topIssues.sort((a, b) => b.count - a.count);
       summary[platform].topPraise.sort((a, b) => b.count - a.count);
 
@@ -107,11 +107,11 @@ const scraperService = {
   async scrapeUrl(url, eventName = '') {
     const platform = platformDetector.detectPlatform(url);
     const postType = platformDetector.detectPostType(url);
-    
+
     logger.info(`Platform detected: ${platform}, Post type: ${postType}`);
-    
+
     let rawData;
-    
+
     if (platform === 'instagram' || platform === 'twitter' || platform === 'linkedin') {
       rawData = await this.callPythonScraper(url, platform, eventName);
     } else {
@@ -126,28 +126,28 @@ const scraperService = {
           throw new Error(`Unsupported platform: ${platform}`);
       }
     }
-    
+
     return dataFormatter.format(rawData, url, platform, eventName);
   },
 
   async searchPlatform(platform, eventName, startDate, endDate, eventContext) {
     logger.info(`Searching platform ${platform} for event ${eventName}`);
-    
+
     try {
       let data;
-      
+
       switch (platform.toLowerCase()) {
         case 'reddit':
           data = await redditScraper.searchEvent(eventName, '3months', startDate);
           break;
         case 'twitter':
-          data = await twitterScraper.searchEvent(eventName, startDate, endDate);
+          data = await this.callPythonSearch('twitter', eventName, eventName);
           break;
         case 'instagram':
-          data = await instagramScraper.searchEvent(eventName, startDate, endDate);
+          data = await this.callPythonSearch('instagram', eventName, eventName);
           break;
         case 'linkedin':
-          data = await linkedinScraper.searchEvent(eventName, startDate, endDate);
+          data = await this.callPythonSearch('linkedin', eventName, eventName);
           break;
         case 'news':
           data = await newsScraper.searchEvent(eventName, startDate, endDate);
@@ -161,41 +161,54 @@ const scraperService = {
         default:
           throw new Error(`Platform ${platform} search not implemented`);
       }
-      
+
       if (data && data.posts) {
+        const eventDateObj = new Date(eventContext.eventDate);
+        const twoWeeksBefore = new Date(eventDateObj);
+        twoWeeksBefore.setDate(twoWeeksBefore.getDate() - 14);
+        const twoWeeksAfter = new Date(eventDateObj);
+        twoWeeksAfter.setDate(twoWeeksAfter.getDate() + 14);
+
+        data.posts = data.posts.filter(post => {
+          const postDate = new Date(post.created || post.postDate || post.created_at || post.timestamp);
+          return postDate >= twoWeeksBefore && postDate <= twoWeeksAfter;
+        });
+
         data.posts = relevanceFilter.filterRelevantPosts(
-          data.posts, 
-          eventName, 
-          startDate, 
+          data.posts,
+          eventName,
+          startDate,
           eventContext,
-          30
+          20
         );
         data.totalResults = data.posts.length;
-        
+
         logger.info(`Filtered to ${data.posts.length} relevant posts for ${platform}`);
       }
-      
+
       return data;
     } catch (error) {
       logger.error(`Error searching ${platform}: ${error.message}`);
-      return { 
-        posts: [], 
-        totalResults: 0, 
+      return {
+        posts: [],
+        totalResults: 0,
         platform: platform,
-        error: error.message 
+        error: error.message
       };
     }
   },
 
   async scrapeEvent(eventName, eventDate, platforms, socialLinks = null, output = 'json') {
     logger.info(`Scraping event: ${eventName} from date: ${eventDate}`);
-    
+
     const startDate = new Date(eventDate);
-    const endDate = new Date(startDate);
-    endDate.setMonth(endDate.getMonth() + 3);
+    startDate.setDate(startDate.getDate() - 14);
+    const endDate = new Date(eventDate);
+    endDate.setDate(endDate.getDate() + 14);
 
     const eventContext = relevanceFilter.generateEventContext(eventName, eventDate);
-    
+    eventContext.eventDate = eventDate;
+
     logger.info(`Generated event context with topics: ${eventContext.topics.join(', ')}`);
 
     const scrapingTasks = [];
@@ -204,7 +217,7 @@ const scraperService = {
       for (const [platform, url] of Object.entries(socialLinks)) {
         if (url) {
           scrapingTasks.push(
-            this.scrapeSocialMedia(platform, url, startDate, endDate, eventContext)
+            this.scrapeSocialMedia(platform, url, startDate, endDate, eventName)
               .catch(error => ({
                 platform,
                 posts: [],
@@ -235,7 +248,7 @@ const scraperService = {
 
     const results = await Promise.all(scrapingTasks);
 
-    const successfulResults = results.filter(result => 
+    const successfulResults = results.filter(result =>
       result && Array.isArray(result.posts) && result.posts.length > 0
     );
 
@@ -247,7 +260,7 @@ const scraperService = {
       }));
 
     const platformSummary = this.summarizePlatformResults(successfulResults);
-    
+
     const aggregatedInsights = this.aggregateInsights(successfulResults);
 
     const formattedData = {
@@ -269,7 +282,7 @@ const scraperService = {
     if (output.toLowerCase() === 'excel') {
       return await dataFormatter.convertToExcel(formattedData);
     }
-    
+
     return formattedData;
   },
 
@@ -277,14 +290,14 @@ const scraperService = {
     const allIssues = [];
     const allPraise = [];
     const sentiments = { positive: 0, negative: 0, neutral: 0 };
-    
+
     results.forEach(result => {
       if (result.posts) {
         result.posts.forEach(post => {
           if (post.sentiment) {
             sentiments[post.sentiment] = (sentiments[post.sentiment] || 0) + 1;
           }
-          
+
           if (post.insights) {
             allIssues.push(...(post.insights.issues || []));
             allPraise.push(...(post.insights.praise || []));
@@ -292,34 +305,34 @@ const scraperService = {
         });
       }
     });
-    
+
     const issueFrequency = {};
     allIssues.forEach(issue => {
       issueFrequency[issue] = (issueFrequency[issue] || 0) + 1;
     });
-    
+
     const praiseFrequency = {};
     allPraise.forEach(praise => {
       praiseFrequency[praise] = (praiseFrequency[praise] || 0) + 1;
     });
-    
+
     const topIssues = Object.entries(issueFrequency)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([issue, count]) => ({ issue, mentions: count }));
-    
+
     const topPraise = Object.entries(praiseFrequency)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([praise, count]) => ({ praise, mentions: count }));
-    
+
     const total = sentiments.positive + sentiments.negative + sentiments.neutral;
     const sentimentPercentages = {
       positive: total > 0 ? ((sentiments.positive / total) * 100).toFixed(2) : 0,
       negative: total > 0 ? ((sentiments.negative / total) * 100).toFixed(2) : 0,
       neutral: total > 0 ? ((sentiments.neutral / total) * 100).toFixed(2) : 0
     };
-    
+
     return {
       overallSentiment: sentimentPercentages,
       topIssues,
@@ -330,7 +343,7 @@ const scraperService = {
 
   generateRecommendations(topIssues, topPraise, sentiment) {
     const recommendations = [];
-    
+
     if (parseFloat(sentiment.negative) > 30) {
       recommendations.push({
         priority: 'high',
@@ -338,7 +351,7 @@ const scraperService = {
         recommendation: 'Address negative sentiment - over 30% of feedback is negative'
       });
     }
-    
+
     topIssues.slice(0, 3).forEach(({ issue, mentions }) => {
       recommendations.push({
         priority: 'high',
@@ -346,7 +359,7 @@ const scraperService = {
         recommendation: `Fix: ${issue} (mentioned ${mentions} times)`
       });
     });
-    
+
     topPraise.slice(0, 2).forEach(({ praise, mentions }) => {
       recommendations.push({
         priority: 'maintain',
@@ -354,22 +367,22 @@ const scraperService = {
         recommendation: `Keep doing: ${praise} (mentioned ${mentions} times)`
       });
     });
-    
+
     return recommendations;
   },
 
-  async scrapeSocialMedia(platform, url, startDate, endDate, eventContext) {
+  async scrapeSocialMedia(platform, url, startDate, endDate, eventName) {
     try {
       let data;
       switch (platform.toLowerCase()) {
         case 'twitter':
-          data = await this.callPythonScraper(url, 'twitter', '', true);
+          data = await this.callPythonScraper(url, 'twitter', eventName, true);
           break;
         case 'instagram':
-          data = await this.callPythonScraper(url, 'instagram', '', true);
+          data = await this.callPythonScraper(url, 'instagram', eventName, true);
           break;
         case 'linkedin':
-          data = await this.callPythonScraper(url, 'linkedin', '', true);
+          data = await this.callPythonScraper(url, 'linkedin', eventName, true);
           break;
         case 'reddit':
           const username = url.split('/').filter(Boolean).pop();
@@ -389,11 +402,11 @@ const scraperService = {
     if (!Array.isArray(urls)) {
       throw new Error('URLs must be an array');
     }
-    
+
     const results = await Promise.allSettled(
       urls.map(url => this.scrapeUrl(url, eventName))
     );
-    
+
     return results.map((result, index) => {
       if (result.status === 'fulfilled') {
         return result.value;
@@ -410,15 +423,15 @@ const scraperService = {
 
   async scrapeProfile(profileUrl, platform, eventName = '') {
     logger.info(`Scraping profile on ${platform}`);
-    
+
     let rawData;
-    
+
     if (platform === 'reddit') {
       rawData = await redditScraper.scrape(profileUrl);
     } else {
       rawData = await this.callPythonScraper(profileUrl, platform, eventName, true);
     }
-    
+
     return dataFormatter.formatProfile(rawData, profileUrl, platform, eventName);
   },
 
@@ -430,7 +443,29 @@ const scraperService = {
         { url, platform, event_name: eventName },
         { timeout: config.pythonApi.timeout }
       );
-      
+
+      return response.data;
+    } catch (error) {
+      if (error.code === 'ECONNREFUSED') {
+        logger.error('Python scraper API is not running');
+        throw new Error('Python scraper service unavailable. Please ensure it is running.');
+      }
+      throw error;
+    }
+  },
+
+  async callPythonSearch(platform, query, eventName) {
+    try {
+      const response = await axios.post(
+        `${config.pythonApi.baseUrl}/search-posts`,
+        {
+          hashtag: query,
+          platform,
+          event_name: eventName
+        },
+        { timeout: config.pythonApi.timeout }
+      );
+
       return response.data;
     } catch (error) {
       if (error.code === 'ECONNREFUSED') {

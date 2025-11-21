@@ -214,11 +214,52 @@ class TwitterScraper:
                 href = link.get_attribute('href')
                 if href:
                     full_url = f'https://twitter.com{href}' if not href.startswith('http') else href
-                    urls.append(full_url)
+                urls.append(full_url)
             return list(set(urls))
         except:
             return []
     
+    def search_posts(self, query, limit=10):
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(user_agent=self.user_agent)
+            page = context.new_page()
+            
+            try:
+                url = f'https://twitter.com/search?q={query}&src=typed_query'
+                page.goto(url, wait_until='networkidle', timeout=30000)
+                time.sleep(3)
+                
+                tweet_urls = []
+                try:
+                    links = page.query_selector_all('a[href*="/status/"]')
+                    for link in links:
+                        href = link.get_attribute('href')
+                        if href:
+                            full_url = f'https://twitter.com{href}'
+                            tweet_urls.append(full_url)
+                except:
+                    pass
+                
+                posts = []
+                for tweet_url in list(set(tweet_urls))[:limit]:
+                    post_data = self.scrape_post(tweet_url)
+                    if 'error' not in post_data:
+                        posts.append(post_data)
+                
+                return {
+                    'platform': 'twitter',
+                    'query': query,
+                    'posts': posts,
+                    'total_results': len(posts)
+                }
+            
+            except Exception as e:
+                return {'error': f'Twitter search failed: {str(e)}'}
+            
+            finally:
+                browser.close()
+
     def _parse_number(self, text):
         multipliers = {'K': 1000, 'M': 1000000, 'B': 1000000000}
         match = re.search(r'([\d.]+)([KMB])?', text, re.IGNORECASE)
