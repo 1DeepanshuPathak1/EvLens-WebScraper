@@ -113,16 +113,20 @@ def search_posts():
         if not scraper:
             return jsonify({'error': f'Unsupported platform: {platform}'}), 400
         
+        print(f"DEBUG: API received search request for {platform}: {hashtag}", flush=True)
         logger.info(f'Searching {platform} for: {hashtag}')
         
         if hasattr(scraper, 'search_posts'):
+            print(f"DEBUG: Calling {platform} scraper.search_posts...", flush=True)
             result = scraper.search_posts(hashtag, limit)
+            print(f"DEBUG: {platform} scraper returned result keys: {list(result.keys()) if result else 'None'}", flush=True)
             result['event_name'] = event_name
             return jsonify(result)
         else:
             return jsonify({'error': f'{platform} search not implemented'}), 501
     
     except Exception as e:
+        print(f"DEBUG: API Search error: {str(e)}", flush=True)
         logger.error(f'Search error: {str(e)}')
         return jsonify({'error': str(e)}), 500
 
