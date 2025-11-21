@@ -12,12 +12,30 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-scrapers = {
-    'instagram': InstagramScraper(),
-    'twitter': TwitterScraper(),
-    'linkedin': LinkedInScraper(),
-    'reddit': RedditScraper()
-}
+scrapers = {}
+
+def get_scraper(platform):
+    """Lazy load scrapers to avoid startup failures"""
+    if platform not in scrapers:
+        try:
+            if platform == 'instagram':
+                from scrapers.instagram_scraper import InstagramScraper
+                scrapers[platform] = InstagramScraper()
+            elif platform == 'twitter':
+                from scrapers.twitter_scraper import TwitterScraper
+                scrapers[platform] = TwitterScraper()
+            elif platform == 'linkedin':
+                from scrapers.linkedin_scraper import LinkedInScraper
+                scrapers[platform] = LinkedInScraper()
+            elif platform == 'reddit':
+                from scrapers.reddit_scraper import RedditScraper
+                scrapers[platform] = RedditScraper()
+            else:
+                return None
+        except Exception as e:
+            logger.error(f"Failed to load {platform} scraper: {str(e)}")
+            return None
+    return scrapers.get(platform)
 
 @app.route('/', methods=['GET', 'HEAD'])
 def root():
@@ -38,12 +56,12 @@ def scrape():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
         
-        if platform not in scrapers:
+        scraper = get_scraper(platform)
+        if not scraper:
             return jsonify({'error': f'Unsupported platform: {platform}'}), 400
         
         logger.info(f'Scraping {platform} URL: {url}')
         
-        scraper = scrapers[platform]
         result = scraper.scrape_post(url)
         result['event_name'] = event_name
         
@@ -64,12 +82,12 @@ def scrape_profile():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
         
-        if platform not in scrapers:
+        scraper = get_scraper(platform)
+        if not scraper:
             return jsonify({'error': f'Unsupported platform: {platform}'}), 400
         
         logger.info(f'Scraping {platform} profile: {url}')
         
-        scraper = scrapers[platform]
         if platform == 'instagram':
              result = scraper.scrape_profile(url, event_name=event_name)
         else:
@@ -95,12 +113,12 @@ def search_posts():
         if not hashtag:
             return jsonify({'error': 'Hashtag is required'}), 400
         
-        if platform not in scrapers:
+        scraper = get_scraper(platform)
+        if not scraper:
             return jsonify({'error': f'Unsupported platform: {platform}'}), 400
         
         logger.info(f'Searching {platform} for: {hashtag}')
         
-        scraper = scrapers[platform]
         if hasattr(scraper, 'search_posts'):
             result = scraper.search_posts(hashtag, limit)
             result['event_name'] = event_name
