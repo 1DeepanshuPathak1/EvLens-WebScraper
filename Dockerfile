@@ -38,7 +38,7 @@ RUN npm ci --only=production
 
 COPY python_scrapers/requirements.txt ./python_scrapers/
 
-RUN pip3 install --no-cache-dir -r python_scrapers/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r python_scrapers/requirements.txt
 
 RUN playwright install chromium && \
     playwright install-deps chromium
