@@ -8,3 +8,4 @@ httpx==0.25.2
 scrapy==2.11.0
 lxml==4.9.3
 python-dateutil==2.8.2
+instaloader==4.10.3
