@@ -1,10 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
-from scrapers.instagram_scraper import InstagramScraper
-from scrapers.twitter_scraper import TwitterScraper
-from scrapers.linkedin_scraper import LinkedInScraper
-from scrapers.reddit_scraper import RedditScraper
 
 app = Flask(__name__)
 CORS(app)
