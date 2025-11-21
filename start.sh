@@ -3,7 +3,7 @@
 echo "Starting EvLens WebScraper Services..."
 
 cd python_scrapers
-python3 scraper_api.py &
+gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 scraper_api:app &
 PYTHON_PID=$!
 cd ..
 

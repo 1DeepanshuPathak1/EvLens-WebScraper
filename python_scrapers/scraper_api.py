@@ -19,6 +19,10 @@ scrapers = {
     'reddit': RedditScraper()
 }
 
+@app.route('/', methods=['GET', 'HEAD'])
+def root():
+    return jsonify({'status': 'OK', 'service': 'Python Scraper API'})
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'OK', 'service': 'Python Scraper API'})
