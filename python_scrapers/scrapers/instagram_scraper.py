@@ -22,7 +22,7 @@ class InstagramScraper:
             quiet=True
         )
         
-        print("Instagram scraper initialized (no login required)")
+        print("Instagram scraper initialized (no login required)", flush=True)
     
     def scrape_post(self, url):
         """Scrape a single Instagram post by URL using public data"""
@@ -59,7 +59,7 @@ class InstagramScraper:
                 'engagement_rate': self._calculate_engagement_simple(likes, comment_count, video_views)
             }
         except Exception as e:
-            print(f"Error scraping post: {str(e)}")
+            print(f"Error scraping post: {str(e)}", flush=True)
             return {'error': f'Instagram post scraping failed: {str(e)}'}
     
     def _extract_comments_alternative(self, shortcode, limit=50):
@@ -104,15 +104,15 @@ class InstagramScraper:
                                     'timestamp': datetime.fromtimestamp(node.get('created_at', 0)).isoformat()
                                 })
                         
-                        print(f"Extracted {len(comments)} comments via API")
+                        print(f"Extracted {len(comments)} comments via API", flush=True)
                 except json.JSONDecodeError:
-                    print("Could not parse Instagram API response")
+                    print("Could not parse Instagram API response", flush=True)
         except Exception as e:
-            print(f"Alternative comment extraction failed: {str(e)}")
+            print(f"Alternative comment extraction failed: {str(e)}", flush=True)
         
         # If API method failed, create placeholder comments to show structure
         if len(comments) == 0:
-            print("Using public data only (comments require Instagram login)")
+            print("Using public data only (comments require Instagram login)", flush=True)
             # Return empty list - comments require authentication
         
         return comments
@@ -130,7 +130,7 @@ class InstagramScraper:
             post_count = 0
             limit = 20
             
-            print(f"Scraping profile: {username} (up to {limit} posts)")
+            print(f"Scraping profile: {username} (up to {limit} posts)", flush=True)
             
             for post in profile.get_posts():
                 if post_count >= limit:
@@ -162,12 +162,12 @@ class InstagramScraper:
                     
                     posts.append(post_data)
                     post_count += 1
-                    print(f"  ✓ Scraped post {post_count}/{limit}: {likes} likes, {comment_count} comments")
+                    print(f"  ✓ Scraped post {post_count}/{limit}: {likes} likes, {comment_count} comments", flush=True)
                     
                     time.sleep(1)  # Rate limiting
                 
                 except Exception as e:
-                    print(f"Error processing post: {str(e)}")
+                    print(f"Error processing post: {str(e)}", flush=True)
                     continue
             
             return {
@@ -182,15 +182,18 @@ class InstagramScraper:
                 'is_private': profile.is_private
             }
         except Exception as e:
-            print(f"Profile scraping error: {str(e)}")
+            print(f"Profile scraping error: {str(e)}", flush=True)
             return {'error': f'Instagram profile scraping failed: {str(e)}'}
     
     def search_posts(self, query, limit=10):
         """Search for posts by event name using Google search"""
+        print(f"DEBUG: Starting search_posts for query: {query}", flush=True)
         if 'instagram.com/' in query and '/p/' not in query and '/reel/' not in query:
+            print("DEBUG: Detected profile URL", flush=True)
             return self.scrape_profile(query)
         
         if '/p/' in query or '/reel/' in query:
+            print("DEBUG: Detected post URL", flush=True)
             post_data = self.scrape_post(query)
             if 'error' not in post_data:
                 return {
@@ -201,11 +204,12 @@ class InstagramScraper:
                 }
             return post_data
         
-        print(f"Searching Google for Instagram posts about: {query}")
+        print(f"Searching Google for Instagram posts about: {query}", flush=True)
         instagram_urls = self._google_search_instagram(query, limit)
+        print(f"DEBUG: Google search returned {len(instagram_urls)} URLs", flush=True)
         
         if not instagram_urls:
-            print(f"No Instagram URLs found for query: {query}")
+            print(f"No Instagram URLs found for query: {query}", flush=True)
             return {
                 'platform': 'instagram',
                 'query': query,
@@ -216,15 +220,16 @@ class InstagramScraper:
         posts = []
         for url in instagram_urls:
             try:
+                print(f"DEBUG: Scraping URL: {url}", flush=True)
                 post_data = self.scrape_post(url)
                 if 'error' not in post_data:
                     posts.append(post_data)
-                    print(f"Successfully scraped: {url}")
+                    print(f"Successfully scraped: {url}", flush=True)
                 else:
-                    print(f"Failed to scrape: {url} - {post_data.get('error')}")
+                    print(f"Failed to scrape: {url} - {post_data.get('error')}", flush=True)
                 time.sleep(1)
             except Exception as e:
-                print(f"Error scraping {url}: {str(e)}")
+                print(f"Error scraping {url}: {str(e)}", flush=True)
                 continue
         
         return {
@@ -236,6 +241,7 @@ class InstagramScraper:
     
     def _google_search_instagram(self, event_name, limit=10):
         """Search Google for Instagram posts/reels related to the event"""
+        print(f"DEBUG: Entering _google_search_instagram with event: {event_name}", flush=True)
         instagram_urls = []
         
         search_queries = [
@@ -257,11 +263,12 @@ class InstagramScraper:
                 break
             
             try:
-                print(f"Searching Google for: {search_query}")
+                print(f"Searching Google for: {search_query}", flush=True)
                 
                 google_url = f"https://www.google.com/search?q={requests.utils.quote(search_query)}&num=20"
                 
                 response = requests.get(google_url, headers=headers, timeout=15)
+                print(f"DEBUG: Google response status: {response.status_code}", flush=True)
                 response.raise_for_status()
                 
                 soup = BeautifulSoup(response.text, 'html.parser')
@@ -292,7 +299,7 @@ class InstagramScraper:
                                 if re.match(r'https?://(?:www\.)?instagram\.com/(?:p|reel)/[A-Za-z0-9_-]+/?$', clean_url):
                                     if clean_url not in instagram_urls:
                                         instagram_urls.append(clean_url)
-                                        print(f"✓ Found Instagram URL: {clean_url}")
+                                        print(f"✓ Found Instagram URL: {clean_url}", flush=True)
                                         
                                         if len(instagram_urls) >= limit:
                                             break
@@ -301,10 +308,10 @@ class InstagramScraper:
                     time.sleep(3)
                 
             except Exception as e:
-                print(f"Error during Google search for '{search_query}': {str(e)}")
+                print(f"Error during Google search for '{search_query}': {str(e)}", flush=True)
                 continue
         
-        print(f"\nFinal count: {len(instagram_urls)} Instagram URLs found")
+        print(f"\nFinal count: {len(instagram_urls)} Instagram URLs found", flush=True)
         return instagram_urls[:limit]
     
     def _extract_shortcode(self, url):
