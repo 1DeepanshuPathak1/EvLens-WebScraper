@@ -2,8 +2,10 @@
 
 echo "Starting EvLens WebScraper Services..."
 
-python3 python_scrapers/scraper_api.py &
+cd python_scrapers
+python3 scraper_api.py &
 PYTHON_PID=$!
+cd ..
 
 echo "Python service started with PID: $PYTHON_PID"
 
