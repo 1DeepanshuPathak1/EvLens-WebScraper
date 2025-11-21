@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-venv \
     wget \
+    curl \
     gnupg \
     ca-certificates \
     fonts-liberation \
