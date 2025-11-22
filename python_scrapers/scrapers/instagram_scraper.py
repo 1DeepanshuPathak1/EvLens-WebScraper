@@ -272,6 +272,7 @@ class InstagramScraper:
                 response.raise_for_status()
                 
                 soup = BeautifulSoup(response.text, 'html.parser')
+                print(f"DEBUG: Page title: {soup.title.string if soup.title else 'No title'}", flush=True)
                 
                 for link in soup.find_all('a', href=True):
                     href = link['href']
